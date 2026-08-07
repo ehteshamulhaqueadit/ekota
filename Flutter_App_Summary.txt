@@ -1,0 +1,111 @@
+Ekota Builder Flutter App - Architecture & Implementation Summary
+================================================================================
+
+OVERVIEW: HOW THE APP WORKS
+---------------------------
+The Ekota Builder app is the producer-facing frontend for managing listings. 
+It follows a standard Flutter architecture using the `Provider` package for state management.
+
+The architecture is divided into 5 main layers:
+1. Models: Data structures representing the JSON responses from the backend.
+2. Services: Classes responsible for making HTTP requests to the backend API.
+3. Providers: State management classes that call Services, hold data, and notify the UI of changes.
+4. Screens: Full-page views that users navigate between.
+5. Widgets: Reusable UI components that make up the screens.
+
+Data Flow Example (Viewing a Listing):
+1. User taps a listing on the `YourItemsScreen`.
+2. App navigates to `ItemDetailsScreen`, passing the listing ID.
+3. `ItemDetailsScreen` tells `ListingProvider` to load the data.
+4. `ListingProvider` calls `ListingService` to fetch the listing, comments, and reviews in parallel.
+5. `ListingService` uses `ApiClient` to make the actual HTTP GET requests (with JWT auth).
+6. Data is returned, parsed into `Models`, and stored in `ListingProvider`.
+7. `ListingProvider` calls `notifyListeners()`, causing the `ItemDetailsScreen` and its child Widgets to rebuild and display the data.
+
+================================================================================
+
+FILE STRUCTURE & MODIFICATIONS
+------------------------------
+clients/ekota_builder/
+    ├── pubspec.yaml (Edited - Was already here before)
+    ├── test/
+    │   └── widget_test.dart (Edited - Was already here before)
+    └── lib/
+        main.dart (Edited - Was already here before)
+        models/
+            comment.dart (Created)
+            home_stats.dart (Created)
+            listing.dart (Created)
+            review.dart (Created)
+        providers/
+            auth_provider.dart (Created)
+            home_stats_provider.dart (Created)
+            listing_provider.dart (Created)
+        screens/
+            add_item_screen.dart (Created)
+            home_screen.dart (Created)
+            item_details_screen.dart (Created)
+            your_items_screen.dart (Created)
+        services/
+            api_client.dart (Created)
+            listing_service.dart (Created)
+        theme/
+            app_colors.dart (Created)
+            app_theme.dart (Created)
+        widgets/
+            app_bottom_nav.dart (Created)
+            comment_section.dart (Created)
+            comment_tile.dart (Created)
+            info_card.dart (Created)
+            media_carousel.dart (Created)
+            media_picker.dart (Created)
+            production_time_badge.dart (Created)
+            production_time_selector.dart (Created)
+            review_section.dart (Created)
+            vote_row.dart (Created)
+
+================================================================================
+
+FILE-BY-FILE EXPLANATION
+------------------------
+
+# ROOT & CONFIGURATION
+- pubspec.yaml: Defines the app's dependencies (e.g., http, provider, image_picker, video_player) and Flutter SDK version.
+- lib/main.dart: The entry point of the app. It initializes the `MultiProvider` (wrapping the app in state managers like AuthProvider, ListingProvider, etc.) and defines the named routes (e.g., '/home', '/producer/items') to navigate between screens.
+
+# THEME
+- lib/theme/app_colors.dart: Centralizes all the hex colors used in the app (e.g., tan, light grey, upvote green) so they can be easily updated.
+- lib/theme/app_theme.dart: Defines the global Material3 ThemeData, standardizing the look of AppBars, TextFields (input boxes), and Buttons across the entire app.
+
+# MODELS (Data Structures)
+- lib/models/listing.dart: Represents a gig/asset. Contains a `copyWith` method for optimistic UI updates (e.g., incrementing a vote instantly before the server confirms).
+- lib/models/comment.dart: Represents a comment, with an optional nested `reply` field for the producer's response.
+- lib/models/review.dart: Represents a text-only review left by an investor.
+- lib/models/home_stats.dart: Represents the producer's dashboard statistics (gigs completed, rating, etc.).
+
+# SERVICES (API Communication)
+- lib/services/api_client.dart: A wrapper around the `http` package. It automatically reads the JWT token from local secure storage and injects it into the `Authorization` header of every API call.
+- lib/services/listing_service.dart: Contains all specific endpoints for listings, separating the business logic of URLs and payloads from the raw HTTP client.
+
+# PROVIDERS (State Management)
+- lib/providers/auth_provider.dart: Reads and stores the user's ID, role, and JWT token. Allows the UI to easily check if the current user is a "producer" or "investor".
+- lib/providers/listing_provider.dart: Manages the state for the `ItemDetailsScreen`. It handles fetching a listing, adding comments/reviews, and handles "optimistic voting" (where the UI updates immediately, but rolls back if the API call fails).
+- lib/providers/home_stats_provider.dart: Fetches and holds the statistics for the dashboard.
+
+# SCREENS (Pages)
+- lib/screens/home_screen.dart: The dashboard showing the producer's avatar, name, and a 2x2 grid of their stats.
+- lib/screens/add_item_screen.dart: A scrollable form for creating a new listing. It validates inputs and uses custom widgets to pick media and production times.
+- lib/screens/your_items_screen.dart: Displays a list of the producer's existing gigs. Implements a `RefreshIndicator` so the user can pull-to-refresh the list.
+- lib/screens/item_details_screen.dart: The most complex screen. It displays the media carousel, funding progress, specs, and coordinates the comment and review sections.
+
+# WIDGETS (Reusable UI Components)
+- lib/widgets/app_bottom_nav.dart: The bottom navigation bar shared across all main screens, featuring a cutout for a FloatingActionButton.
+- lib/widgets/info_card.dart: A standard grey container with rounded corners and a title, used repeatedly on the details screen to group information.
+- lib/widgets/media_picker.dart: Allows the user to select multiple images and videos from their phone's gallery using the `image_picker` package.
+- lib/widgets/production_time_selector.dart: A toggle (Instant vs Scheduled) that conditionally reveals a text box for entering the number of days.
+- lib/widgets/production_time_badge.dart: A small chip displayed on the item details page summarizing the production time.
+- lib/widgets/vote_row.dart: Contains the upvote/downvote buttons. It reads the current vote state from `ListingProvider` and highlights the active vote.
+- lib/widgets/media_carousel.dart: Uses `carousel_slider` to display photos (via `cached_network_image`) and videos (via `chewie` and `video_player`).
+- lib/widgets/comment_tile.dart: Displays a single comment. If the user is a producer and no reply exists, it shows an inline text box to post a reply.
+- lib/widgets/comment_section.dart: Wraps multiple `CommentTile`s and provides a text field at the bottom to post a new comment.
+- lib/widgets/review_section.dart: Similar to the comment section, but the text box to post a new review is hidden unless the backend confirms the user is an eligible investor (`canReview == true`).

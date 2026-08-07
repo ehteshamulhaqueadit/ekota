@@ -1,111 +1,614 @@
-Ekota Builder Flutter App - Architecture & Implementation Summary
+Ekota Builder - Complete Project Documentation
+================================================================================
+Written for Module 1 / Member 3
+This document is intended for ALL teammates working on this project.
 ================================================================================
 
-OVERVIEW: HOW THE APP WORKS
----------------------------
-The Ekota Builder app is the producer-facing frontend for managing listings. 
-It follows a standard Flutter architecture using the `Provider` package for state management.
-
-The architecture is divided into 5 main layers:
-1. Models: Data structures representing the JSON responses from the backend.
-2. Services: Classes responsible for making HTTP requests to the backend API.
-3. Providers: State management classes that call Services, hold data, and notify the UI of changes.
-4. Screens: Full-page views that users navigate between.
-5. Widgets: Reusable UI components that make up the screens.
-
-Data Flow Example (Viewing a Listing):
-1. User taps a listing on the `YourItemsScreen`.
-2. App navigates to `ItemDetailsScreen`, passing the listing ID.
-3. `ItemDetailsScreen` tells `ListingProvider` to load the data.
-4. `ListingProvider` calls `ListingService` to fetch the listing, comments, and reviews in parallel.
-5. `ListingService` uses `ApiClient` to make the actual HTTP GET requests (with JWT auth).
-6. Data is returned, parsed into `Models`, and stored in `ListingProvider`.
-7. `ListingProvider` calls `notifyListeners()`, causing the `ItemDetailsScreen` and its child Widgets to rebuild and display the data.
 
 ================================================================================
-
-FILE STRUCTURE & MODIFICATIONS
-------------------------------
-clients/ekota_builder/
-    ├── pubspec.yaml (Edited - Was already here before)
-    ├── test/
-    │   └── widget_test.dart (Edited - Was already here before)
-    └── lib/
-        main.dart (Edited - Was already here before)
-        models/
-            comment.dart (Created)
-            home_stats.dart (Created)
-            listing.dart (Created)
-            review.dart (Created)
-        providers/
-            auth_provider.dart (Created)
-            home_stats_provider.dart (Created)
-            listing_provider.dart (Created)
-        screens/
-            add_item_screen.dart (Created)
-            home_screen.dart (Created)
-            item_details_screen.dart (Created)
-            your_items_screen.dart (Created)
-        services/
-            api_client.dart (Created)
-            listing_service.dart (Created)
-        theme/
-            app_colors.dart (Created)
-            app_theme.dart (Created)
-        widgets/
-            app_bottom_nav.dart (Created)
-            comment_section.dart (Created)
-            comment_tile.dart (Created)
-            info_card.dart (Created)
-            media_carousel.dart (Created)
-            media_picker.dart (Created)
-            production_time_badge.dart (Created)
-            production_time_selector.dart (Created)
-            review_section.dart (Created)
-            vote_row.dart (Created)
-
+SECTION 1: COMPLETE FILE STRUCTURE
 ================================================================================
 
-FILE-BY-FILE EXPLANATION
-------------------------
+Below is the full file structure of everything that exists in the project.
+Each file is labeled: [EXISTED] = was already there, [CREATED] = new file I built,
+[EDITED] = file that already existed but was significantly modified.
 
-# ROOT & CONFIGURATION
-- pubspec.yaml: Defines the app's dependencies (e.g., http, provider, image_picker, video_player) and Flutter SDK version.
-- lib/main.dart: The entry point of the app. It initializes the `MultiProvider` (wrapping the app in state managers like AuthProvider, ListingProvider, etc.) and defines the named routes (e.g., '/home', '/producer/items') to navigate between screens.
+d:\WORK\Ekota\
+    ├── Flutter_App_Summary.txt             [CREATED] - This documentation file
+    ├── setup_database.txt                  [EXISTED] - Was empty, untouched
+    ├── README.md                           [EXISTED] - Untouched
+    ├── LICENSE                             [EXISTED] - Untouched
+    ├── hello.py                            [EXISTED] - Untouched test file
+    │
+    ├── info/
+    │   ├── Assignment 01 Functional Requirements.docx.pdf  [EXISTED]
+    │   └── Module1_Member3_Flutter_Frontend_Guide.md       [EXISTED] - The guide I built from
+    │
+    ├── ekota_server/                        <- THE BACKEND (Node.js)
+    │   ├── package.json                    [EDITED]  - Added 'dev' script, all dependencies
+    │   ├── tsconfig.json                   [CREATED] - TypeScript configuration
+    │   ├── .env                            [CREATED] - Holds the database password (DO NOT COMMIT)
+    │   ├── prisma/
+    │   │   └── schema.prisma               [CREATED] - Defines the database tables
+    │   └── src/
+    │       └── index.ts                    [CREATED] - The entire Express API server
+    │
+    └── clients/
+        └── ekota_builder/                   <- THE FRONTEND (Flutter)
+            ├── pubspec.yaml                [EDITED]  - Added all Flutter package dependencies
+            ├── android/
+            │   └── gradle.properties       [EDITED]  - Added kotlin.incremental=false (Windows build fix)
+            ├── test/
+            │   └── widget_test.dart        [EDITED]  - Fixed stale test reference
+            └── lib/
+                ├── main.dart               [EDITED]  - Rewrote with MultiProvider & named routes
+                ├── models/
+                │   ├── listing.dart        [CREATED] - Data structure for a listing/asset
+                │   ├── comment.dart        [CREATED] - Data structure for a comment
+                │   ├── review.dart         [CREATED] - Data structure for a review
+                │   └── home_stats.dart     [CREATED] - Data structure for dashboard stats
+                ├── providers/
+                │   ├── auth_provider.dart          [CREATED] - Manages logged-in user session
+                │   ├── listing_provider.dart        [CREATED] - Manages listing detail page state
+                │   └── home_stats_provider.dart     [CREATED] - Manages dashboard stats
+                ├── screens/
+                │   ├── home_screen.dart             [CREATED] - Dashboard / home page
+                │   ├── add_item_screen.dart         [CREATED] - Form to create a new listing
+                │   ├── your_items_screen.dart       [CREATED] - List of producer's own listings
+                │   └── item_details_screen.dart     [CREATED] - Full detail view of one listing
+                ├── services/
+                │   ├── api_client.dart              [CREATED] - HTTP client (handles auth headers)
+                │   └── listing_service.dart         [CREATED] - All listing-related API calls
+                ├── theme/
+                │   ├── app_colors.dart              [CREATED] - Centralized color palette
+                │   └── app_theme.dart               [CREATED] - Global Material3 app theme
+                └── widgets/
+                    ├── app_bottom_nav.dart           [CREATED] - Bottom navigation bar
+                    ├── info_card.dart                [CREATED] - Reusable card container
+                    ├── media_picker.dart             [CREATED] - Image/video selector widget
+                    ├── production_time_selector.dart [CREATED] - Toggle (Instant / Scheduled)
+                    ├── production_time_badge.dart    [CREATED] - Badge shown on detail screen
+                    ├── vote_row.dart                 [CREATED] - Upvote / Downvote buttons
+                    ├── media_carousel.dart           [CREATED] - Scrollable image/video viewer
+                    ├── comment_tile.dart             [CREATED] - Displays a single comment
+                    ├── comment_section.dart          [CREATED] - Full comment list + input box
+                    └── review_section.dart           [CREATED] - Full review list + input box
 
-# THEME
-- lib/theme/app_colors.dart: Centralizes all the hex colors used in the app (e.g., tan, light grey, upvote green) so they can be easily updated.
-- lib/theme/app_theme.dart: Defines the global Material3 ThemeData, standardizing the look of AppBars, TextFields (input boxes), and Buttons across the entire app.
 
-# MODELS (Data Structures)
-- lib/models/listing.dart: Represents a gig/asset. Contains a `copyWith` method for optimistic UI updates (e.g., incrementing a vote instantly before the server confirms).
-- lib/models/comment.dart: Represents a comment, with an optional nested `reply` field for the producer's response.
-- lib/models/review.dart: Represents a text-only review left by an investor.
-- lib/models/home_stats.dart: Represents the producer's dashboard statistics (gigs completed, rating, etc.).
+================================================================================
+SECTION 2: WHAT EACH FILE DOES
+================================================================================
 
-# SERVICES (API Communication)
-- lib/services/api_client.dart: A wrapper around the `http` package. It automatically reads the JWT token from local secure storage and injects it into the `Authorization` header of every API call.
-- lib/services/listing_service.dart: Contains all specific endpoints for listings, separating the business logic of URLs and payloads from the raw HTTP client.
+--- BACKEND (ekota_server/) ---
 
-# PROVIDERS (State Management)
-- lib/providers/auth_provider.dart: Reads and stores the user's ID, role, and JWT token. Allows the UI to easily check if the current user is a "producer" or "investor".
-- lib/providers/listing_provider.dart: Manages the state for the `ItemDetailsScreen`. It handles fetching a listing, adding comments/reviews, and handles "optimistic voting" (where the UI updates immediately, but rolls back if the API call fails).
-- lib/providers/home_stats_provider.dart: Fetches and holds the statistics for the dashboard.
+.env
+    Stores secret configuration values that should NEVER be committed to Git.
+    Contains two things: the DATABASE_URL (the connection string for PostgreSQL,
+    including the username and password) and the JWT_SECRET (the key used to
+    sign and verify login tokens). To switch from local to a cloud database,
+    you only need to change the DATABASE_URL in this one file.
 
-# SCREENS (Pages)
-- lib/screens/home_screen.dart: The dashboard showing the producer's avatar, name, and a 2x2 grid of their stats.
-- lib/screens/add_item_screen.dart: A scrollable form for creating a new listing. It validates inputs and uses custom widgets to pick media and production times.
-- lib/screens/your_items_screen.dart: Displays a list of the producer's existing gigs. Implements a `RefreshIndicator` so the user can pull-to-refresh the list.
-- lib/screens/item_details_screen.dart: The most complex screen. It displays the media carousel, funding progress, specs, and coordinates the comment and review sections.
+prisma/schema.prisma
+    This is the "blueprint" for your database. It defines four tables (called
+    "models" in Prisma):
+    - User: stores email, name, and role (producer/investor/renter/admin)
+    - Listing: stores all asset info (name, price, description, image URLs,
+      upvotes, downvotes, production time, campaign status, etc.)
+    - Comment: stores a comment tied to a listing and a user, with an optional
+      'reply' field for the producer's response.
+    - Review: stores a star rating (1-5) and review text tied to a listing.
+    When you run "npx prisma db push", Prisma reads this file and creates/updates
+    the actual SQL tables in your database automatically.
 
-# WIDGETS (Reusable UI Components)
-- lib/widgets/app_bottom_nav.dart: The bottom navigation bar shared across all main screens, featuring a cutout for a FloatingActionButton.
-- lib/widgets/info_card.dart: A standard grey container with rounded corners and a title, used repeatedly on the details screen to group information.
-- lib/widgets/media_picker.dart: Allows the user to select multiple images and videos from their phone's gallery using the `image_picker` package.
-- lib/widgets/production_time_selector.dart: A toggle (Instant vs Scheduled) that conditionally reveals a text box for entering the number of days.
-- lib/widgets/production_time_badge.dart: A small chip displayed on the item details page summarizing the production time.
-- lib/widgets/vote_row.dart: Contains the upvote/downvote buttons. It reads the current vote state from `ListingProvider` and highlights the active vote.
-- lib/widgets/media_carousel.dart: Uses `carousel_slider` to display photos (via `cached_network_image`) and videos (via `chewie` and `video_player`).
-- lib/widgets/comment_tile.dart: Displays a single comment. If the user is a producer and no reply exists, it shows an inline text box to post a reply.
-- lib/widgets/comment_section.dart: Wraps multiple `CommentTile`s and provides a text field at the bottom to post a new comment.
-- lib/widgets/review_section.dart: Similar to the comment section, but the text box to post a new review is hidden unless the backend confirms the user is an eligible investor (`canReview == true`).
+tsconfig.json
+    Tells the TypeScript compiler how to handle the backend code. Key setting:
+    it compiles files from the "src/" folder. This is required for the project
+    to run using TypeScript rather than plain JavaScript.
+
+src/index.ts
+    This is THE ENTIRE BACKEND in one file. It is an Express.js server that:
+    1. Connects to PostgreSQL via the Prisma client
+    2. Sets up CORS (so the Flutter app on a different device can talk to it)
+    3. Defines an "authMiddleware" function (see Section 7 for detail)
+    4. Exposes the following REST API endpoints:
+       - GET  /api/producers/:id/listings   -> Fetch all listings for a producer
+       - POST /api/listings                 -> Create a new listing
+       - GET  /api/listings/:id             -> Get one listing's full details
+       - POST /api/listings/:id/vote        -> Upvote or downvote a listing
+       - GET  /api/listings/:id/comments    -> Get all comments for a listing
+       - POST /api/listings/:id/comments    -> Post a new comment
+       - POST /api/comments/:id/reply       -> Post a producer reply to a comment
+       - GET  /api/listings/:id/reviews     -> Get all reviews for a listing
+       - POST /api/listings/:id/reviews     -> Post a new review
+       - GET  /api/listings/:id/can-review  -> Check if user is allowed to review
+
+--- FRONTEND (clients/ekota_builder/lib/) ---
+
+main.dart
+    The starting point of the Flutter app. It does two important things:
+    1. Wraps the entire app in a "MultiProvider" so that AuthProvider,
+       ListingProvider, and HomeStatsProvider are available on every screen.
+    2. Defines the named route map so screens can navigate to each other using
+       strings like Navigator.pushNamed(context, '/producer/items').
+
+theme/app_colors.dart
+    A simple file containing all color constants (tan, light grey, accent gold,
+    etc.) defined in one place. If you want to change the app's color scheme,
+    this is the only file you need to edit.
+
+theme/app_theme.dart
+    Builds a Material3 ThemeData object using the colors from app_colors.dart.
+    It standardizes the appearance of all AppBars, TextFields, and Buttons so
+    they look consistent everywhere without repeating style code.
+
+models/listing.dart
+    A Dart class that mirrors the JSON structure returned by the backend for a
+    listing. It includes a "fromJson" factory constructor (to parse JSON into a
+    Dart object) and a "copyWith" method (to create a modified copy, used for
+    optimistic UI updates like instantly showing a new vote count).
+
+models/comment.dart
+    A Dart class matching the backend's comment JSON format. It includes the
+    author's name (flattened from the nested user object) and the optional
+    producer 'reply' field.
+
+models/review.dart
+    A Dart class for a review, including the numeric star rating and text.
+
+models/home_stats.dart
+    A simple Dart class holding four numbers: gigsCompleted, gigsCurrentlyListed,
+    investors, and rating, used to populate the dashboard grid.
+
+services/api_client.dart
+    The core HTTP utility for the whole app. Instead of every screen making raw
+    HTTP calls, they all use this class. It does two things automatically:
+    1. Prepends the server's base URL to every request
+       (currently set to http://192.168.0.102:3000/api for Android testing).
+    2. Reads the JWT token from SharedPreferences and attaches it as an
+       "Authorization: Bearer <token>" header on every request so the backend
+       knows who the user is.
+
+services/listing_service.dart
+    A higher-level service that uses ApiClient to make specific API calls. Each
+    method corresponds to one action (e.g., createListing, postComment, vote).
+    Screens and Providers talk to this service instead of building URLs manually.
+
+providers/auth_provider.dart
+    A ChangeNotifier class that holds the current user's session: their userId,
+    role (producer/investor), name, and JWT token. It reads these from
+    SharedPreferences when the app starts (loadFromStorage) and saves them after
+    a successful login (saveSession). The UI uses this to check things like
+    "is this user a producer?" and "what is my userId?".
+
+providers/listing_provider.dart
+    Manages all the state for the ItemDetailsScreen. It fetches the listing,
+    comments, and reviews in parallel. It also handles "optimistic voting":
+    when a user taps upvote, the UI updates instantly without waiting for the
+    server. If the server call fails, it rolls back the change.
+
+providers/home_stats_provider.dart
+    A simple provider that fetches the dashboard stats (gig count, rating, etc.)
+    and exposes loading/error states to the HomeScreen.
+
+screens/home_screen.dart
+    The main dashboard. It listens to HomeStatsProvider and displays the producer's
+    name, avatar, and a 2x2 card grid showing their stats. If the data is loading
+    or an error occurs, it shows the appropriate message.
+
+screens/add_item_screen.dart
+    A scrollable form with 6 input fields: Asset Name, Category, Funding Target,
+    Rental Price/Day, Description, and Specifications. It also includes the
+    MediaPicker widget and the ProductionTimeSelector widget. When submitted, it
+    calls ListingService.createListing() and navigates back on success.
+
+screens/your_items_screen.dart
+    Fetches and displays all listings belonging to the current producer. It shows
+    a card for each listing with the name, campaign status, and key stats. Supports
+    pull-to-refresh. Tapping a card navigates to ItemDetailsScreen.
+
+screens/item_details_screen.dart
+    The most complex screen. It uses a ListView to display:
+    - A media carousel (photos/videos)
+    - The listing title, campaign status, and production time badge
+    - The vote row (thumbs up / thumbs down)
+    - A funding progress bar
+    - An info card for investors
+    - An info card for description and specs
+    - The full comment section
+    - The full review section
+
+widgets/app_bottom_nav.dart
+    The persistent navigation bar at the bottom. It has two tabs: Home and
+    Your Items. It also contains a floating "+" button in the center that
+    navigates to the AddItemScreen.
+
+widgets/media_picker.dart
+    Lets the user pick images and videos from their phone gallery using the
+    image_picker package. It shows thumbnails of selected files and an "x"
+    button to remove any of them.
+
+widgets/production_time_selector.dart
+    A UI widget with two toggle buttons: "Instant" and "Scheduled". When
+    "Scheduled" is selected, a text field appears asking for the number of days.
+
+widgets/vote_row.dart
+    Displays thumbs-up and thumbs-down icons with their counts. It reads state
+    from ListingProvider and highlights whichever vote the user has already cast.
+    Tapping calls ListingProvider to handle the optimistic update and API call.
+
+widgets/media_carousel.dart
+    A horizontally scrollable carousel. For images, it uses CachedNetworkImage
+    to load and cache them efficiently. For videos, it uses the chewie and
+    video_player packages to display a player with controls.
+
+widgets/comment_tile.dart
+    Renders a single comment. Shows the author's name and text. If the logged-in
+    user is the producer and no reply exists yet, a reply input box appears inline.
+
+widgets/comment_section.dart
+    Wraps all CommentTiles into a scrollable list and includes a text input at the
+    bottom for posting a new comment. Calls ListingProvider.addComment().
+
+widgets/review_section.dart
+    Similar to comment_section but for reviews. The text input for a new review is
+    hidden unless canReview == true (returned by the backend), ensuring only
+    eligible investors can leave reviews.
+
+widgets/info_card.dart
+    A simple reusable widget: a container with rounded corners, a shadow, a bold
+    title, and a child widget. Used many times on the details screen to group
+    information into visual blocks.
+
+widgets/production_time_badge.dart
+    A small chip/pill widget. Shows a lightning bolt icon for "Instant" or a
+    clock icon with the number of days for "Scheduled".
+
+
+================================================================================
+SECTION 3: HOW THE FRONTEND WORKS
+================================================================================
+
+The Flutter frontend follows a strict 3-layer architecture:
+  Services -> Providers -> Screens/Widgets
+
+Layer 1: Services (The Data Fetcher)
+    Services (api_client.dart, listing_service.dart) are responsible for one
+    thing only: talking to the backend API. They know nothing about the UI.
+    They take inputs (e.g., a listing ID), make an HTTP request, parse the JSON
+    response into a Dart Model object, and return it.
+
+Layer 2: Providers (The Brain / State Manager)
+    Providers (auth_provider, listing_provider, home_stats_provider) sit between
+    the Services and the UI. They:
+    - Call the Services to fetch data
+    - Hold the resulting data and loading/error states in memory
+    - Call notifyListeners() when data changes, which tells all listening widgets
+      to automatically rebuild and show the new data
+
+    This is the Provider pattern (using the 'provider' package). The providers are
+    initialized in main.dart and placed above every screen so any screen can
+    access them anywhere with: context.read<ProviderName>()
+
+Layer 3: Screens & Widgets (The View)
+    Screens are full pages. Widgets are reusable building blocks inside screens.
+    They do NOT fetch data or contain business logic. They only:
+    - Read state from Providers using context.watch<ProviderName>()
+    - Call methods on Providers when the user takes an action (e.g., tap a button)
+    - Display loading spinners, error messages, or data depending on the state
+
+Data Flow Example (Posting a new listing):
+    1. User fills out the AddItemScreen form and taps "Post Listing"
+    2. The screen calls: ListingService().createListing(payload)
+    3. ListingService builds the JSON body and calls ApiClient.post('/listings', ...)
+    4. ApiClient automatically attaches the JWT token from SharedPreferences
+    5. The HTTP POST request goes to http://192.168.0.102:3000/api/listings
+    6. Backend receives it, saves to PostgreSQL, and returns the new listing JSON
+    7. ListingService parses the JSON into a Listing model object and returns it
+    8. The screen receives the Listing object and navigates to ItemDetailsScreen
+
+
+================================================================================
+SECTION 4: HOW THE BACKEND WORKS
+================================================================================
+
+The backend is a Node.js + Express.js + Prisma + PostgreSQL application.
+
+How a Request is Processed (Step by Step):
+    1. A request arrives at the Express server on port 3000.
+    2. CORS middleware runs first. It checks that the request is from an allowed
+       origin (currently "*" meaning any origin is allowed for development).
+    3. authMiddleware runs second. It reads the "Authorization" header, extracts
+       the JWT token, and verifies it using the JWT_SECRET. The verified user
+       object (containing their ID and role) is then attached to the request as
+       "req.user" so any route handler can access it.
+    4. The matching route handler function runs (e.g., the POST /api/listings
+       function runs when the Flutter app creates a new listing).
+    5. The route handler uses the Prisma client (the TypeScript interface to
+       PostgreSQL) to read/write data. For example:
+           prisma.listing.create({ data: { ...body, producerId } })
+       This generates and runs the SQL INSERT query automatically.
+    6. The route handler sends back a JSON response with the result.
+
+Key Concepts:
+    - JWT (JSON Web Token): A signed string that proves who the user is. It
+      contains the user's ID and role. Only someone with the JWT_SECRET can
+      create or verify a valid token. The backend mints one token on login,
+      and the frontend sends it on every request.
+    - Prisma: An ORM (Object Relational Mapper). Instead of writing raw SQL,
+      you write TypeScript code like prisma.listing.findMany(). Prisma converts
+      this to the correct SQL and returns TypeScript-typed objects. This makes
+      it impossible to have SQL typos and makes the database easy to modify.
+    - PostgreSQL: A powerful, free, open-source relational database. All your
+      app's data (users, listings, comments, reviews) is stored here in tables.
+
+
+================================================================================
+SECTION 5: HOW FRONTEND AND BACKEND WORK TOGETHER
+================================================================================
+
+The connection between frontend and backend is entirely through HTTP REST APIs.
+
+1. The Flutter app knows the backend's address. It is stored in:
+   clients/ekota_builder/lib/services/api_client.dart
+   (static const _baseUrl = 'http://192.168.0.102:3000/api';)
+   For Android testing: use your PC's local network IP.
+   For production: replace this with your cloud server URL (e.g., https://api.ekota.com).
+
+2. Every action in the Flutter app that needs data is routed through ApiClient.
+   ApiClient automatically includes the JWT token in every request header.
+
+3. The backend validates the token, processes the request using Prisma + PostgreSQL,
+   and returns a JSON response.
+
+4. The Flutter app parses the JSON into Dart Model objects using fromJson() constructors
+   and displays the result through the Provider -> Widget chain.
+
+Authentication Flow (once friend completes login screen):
+    Frontend                                Backend
+    --------                                -------
+    POST /api/auth/login                ->  Verify credentials
+    { email, password }                 ->  Look up user in DB
+                                        <-  { token: "eyJhb...", user: {...} }
+    Store token in SharedPreferences    ->
+    Store userId in AuthProvider        ->
+    All future requests use the token   ->  authMiddleware reads and verifies token
+    context.read<AuthProvider>().userId ->  req.user.id is used to fetch correct data
+
+
+================================================================================
+SECTION 6: HOW THE ENTIRE SYSTEM WORKS TOGETHER
+================================================================================
+
+Think of the system in three layers:
+
+[Android/Windows App] <--HTTP JSON--> [Express Server] <--Prisma SQL--> [PostgreSQL DB]
+
+Complete User Journey (Producing a Listing):
+
+Step 1 - Launch:
+    The Flutter app starts. main.dart initializes all Providers. AuthProvider
+    calls loadFromStorage() to check if there is a saved session (JWT token and
+    userId) in SharedPreferences. If found, the user is considered logged in.
+
+Step 2 - Home Screen:
+    HomeStatsProvider fetches the producer's stats from the backend
+    (GET /api/producers/:id/stats). The backend queries the PostgreSQL listings
+    table to count this producer's listings and returns the stats JSON.
+
+Step 3 - Adding a Listing:
+    User taps "+" -> AddItemScreen opens. They fill in asset name, price,
+    description, pick 2 photos. They tap "Post Listing". The screen calls
+    ListingService.createListing() -> ApiClient.post('/listings', data) ->
+    Express receives the request -> authMiddleware identifies the producer ->
+    Prisma inserts a new row in the "Listing" table in PostgreSQL ->
+    Backend returns the new listing JSON -> Flutter navigates to ItemDetailsScreen.
+
+Step 4 - Viewing Listings:
+    YourItemsScreen calls ListingService.getMyListings(userId) ->
+    ApiClient.get('/producers/$userId/listings') -> Express queries Prisma for all
+    listings where producerId matches -> Returns an array of listing JSON objects ->
+    Flutter renders each one as a card.
+
+Step 5 - Voting:
+    User taps thumbs up on ItemDetailsScreen -> VoteRow widget calls
+    ListingProvider.vote('upvote') -> Provider does OPTIMISTIC UPDATE (immediately
+    increments the UI count without waiting) -> Calls ListingService.vote() ->
+    ApiClient.post('/listings/$id/vote', { type: 'upvote' }) -> Express increments
+    the "upvotes" column in PostgreSQL -> If this fails, the Provider rolls back the
+    UI to the previous count.
+
+
+================================================================================
+SECTION 7: THE MOCK LOGIN SYSTEM (IMPORTANT FOR TEAMMATES)
+================================================================================
+
+WHY IT EXISTS:
+    The full login screen (Authentication) is being built by a different team member.
+    Without a login system, the Flutter app has no JWT token and no userId stored
+    in AuthProvider. This causes two problems:
+    - Problem 1: Every API request would be rejected by the backend with a "401
+      No token provided" error.
+    - Problem 2: The YourItemsScreen calls the API with an empty userId
+      (/api/producers//listings), causing a 404 "Cannot GET" error.
+
+HOW THE MOCK BYPASS WORKS (Current State):
+
+    On the BACKEND (ekota_server/src/index.ts - authMiddleware):
+    The authMiddleware was modified to detect when no token is provided or when
+    the token is literally the string "null". When this happens, instead of
+    rejecting the request, it:
+    1. Looks in the database for the first user with role = 'producer'.
+    2. If none exists, it automatically creates one: { email: 'producer@test.com',
+       name: 'Test Producer', role: 'producer' }.
+    3. It sets that user as "req.user" and lets the request proceed.
+    This means all requests during testing are automatically treated as if they
+    came from this mock producer.
+
+    On the FRONTEND (your_items_screen.dart):
+    The YourItemsScreen reads context.read<AuthProvider>().userId to build the
+    URL. Since AuthProvider has no session, userId is null, making the URL broken.
+    This is a frontend state problem that will be automatically resolved once the
+    login screen is integrated.
+
+HOW TO REMOVE THE MOCK WHEN LOGIN IS READY:
+    When the login team member finishes their work:
+    1. In ekota_server/src/index.ts, update authMiddleware to remove the
+       fallback block. The middleware should strictly return 401 if no token
+       is provided (the original, secure behavior).
+    2. The Flutter frontend will now automatically work correctly because:
+       - After login, the JWT token is saved via AuthProvider.saveSession()
+       - ApiClient reads this token from SharedPreferences
+       - AuthProvider.userId is also saved and will produce a valid URL
+    No other changes should be required.
+
+
+================================================================================
+SECTION 8: HOW TEAMMATES CAN BUILD ON THIS CODEBASE
+================================================================================
+
+This section explains how to add new features without breaking existing ones.
+
+--- HOW TO ADD A NEW BACKEND FEATURE ---
+
+Example: Adding a "Watchlist" feature where investors can save listings.
+
+Step 1: Update the Database Schema
+    Open ekota_server/prisma/schema.prisma and add a new model:
+
+    model WatchlistItem {
+      id        String   @id @default(uuid())
+      userId    String
+      listingId String
+      user      User     @relation(fields: [userId], references: [id])
+      listing   Listing  @relation(fields: [listingId], references: [id])
+      createdAt DateTime @default(now())
+    }
+
+    Also add the relation to the User and Listing models:
+    In User: watchlist WatchlistItem[]
+    In Listing: watchedBy WatchlistItem[]
+
+Step 2: Apply the Schema Change
+    Run: npx prisma db push
+    Prisma will automatically add the new table to PostgreSQL. No manual SQL needed.
+
+Step 3: Add the API Endpoints
+    Open ekota_server/src/index.ts and add new route handlers:
+
+    // Add to watchlist
+    app.post('/api/watchlist', authMiddleware, async (req, res) => {
+      const userId = (req as any).user.id;
+      const { listingId } = req.body;
+      const item = await prisma.watchlistItem.create({ data: { userId, listingId } });
+      res.status(201).json(item);
+    });
+
+    // Get user's watchlist
+    app.get('/api/watchlist', authMiddleware, async (req, res) => {
+      const userId = (req as any).user.id;
+      const items = await prisma.watchlistItem.findMany({ where: { userId } });
+      res.json(items);
+    });
+
+Done! The backend is now ready.
+
+--- HOW TO ADD A NEW FRONTEND FEATURE ---
+
+Continuing the Watchlist example:
+
+Step 1: Create the Model (if needed)
+    Add lib/models/watchlist_item.dart with fromJson() and toJson() methods.
+
+Step 2: Add to the Service
+    Add new methods to lib/services/listing_service.dart:
+    
+    Future<void> addToWatchlist(String listingId) =>
+        _api.post('/watchlist', {'listingId': listingId});
+    
+    Future<List<WatchlistItem>> getWatchlist() async {
+      final data = await _api.get('/watchlist');
+      return (data as List).map((j) => WatchlistItem.fromJson(j)).toList();
+    }
+
+Step 3: Create a Provider (if complex state is needed)
+    Add lib/providers/watchlist_provider.dart extending ChangeNotifier.
+    Register it in main.dart inside the MultiProvider list.
+
+Step 4: Add a Screen or Widget
+    Create lib/screens/watchlist_screen.dart or add a button widget to an
+    existing screen. Connect it to your new WatchlistProvider.
+
+Step 5: Add a Route (for a new screen)
+    In lib/main.dart, add to the routes map:
+    '/watchlist': (context) => const WatchlistScreen(),
+
+--- HOW TO SWITCH TO A CLOUD DATABASE ---
+
+This is extremely simple because of Prisma:
+
+Step 1: Create a PostgreSQL instance online.
+    Free options: Neon.tech, Supabase, Railway, Render, or your Oracle Cloud VM.
+    They will give you a connection string that looks like:
+    postgresql://user:password@host.cloud.com:5432/ekota?sslmode=require
+
+Step 2: Update the .env file.
+    Open ekota_server/.env and replace the DATABASE_URL value.
+    Do not change anything else.
+
+Step 3: Push the schema.
+    Run: npx prisma db push
+    Prisma will connect to the cloud database and create all the tables there.
+    Your local database is no longer used.
+
+--- HOW TO DEPLOY THE BACKEND SERVER ONLINE ---
+
+Currently the backend only runs on your local PC (localhost:3000). To make it
+accessible from anywhere (not just your local WiFi network):
+
+Step 1: Deploy ekota_server/ to a hosting service.
+    Free/cheap options: Render.com, Railway.app, or your Oracle Cloud VM.
+
+Step 2: Set the DATABASE_URL environment variable on the hosting platform
+    (using their dashboard, NOT the .env file, since .env should not be deployed).
+
+Step 3: Update the Flutter app's base URL.
+    In clients/ekota_builder/lib/services/api_client.dart, change:
+    static const _baseUrl = 'http://192.168.0.102:3000/api';
+    to your deployed server's URL:
+    static const _baseUrl = 'https://ekota-api.onrender.com/api';
+
+Step 4: Rebuild the Flutter APK.
+    Run: flutter build apk --debug
+    Distribute the new APK to testers.
+
+--- COMBINING EVERYONE'S WORK ---
+
+Git Workflow Recommendation:
+    - Each team member should work on their own Git branch (e.g., feature/login,
+      feature/investor-view, feature/watchlist).
+    - When ready to merge, create a Pull Request into the main branch.
+    - Merge conflicts most likely to occur:
+        * pubspec.yaml (if two people add different packages) -> merge manually
+        * main.dart (if two people add new routes) -> merge manually
+        * prisma/schema.prisma (if two people add new models) -> merge manually,
+          then run "npx prisma db push" again to update the database.
+        * index.ts (if two people add new endpoints) -> merge manually, each
+          person's new app.get/app.post blocks can usually just be appended.
+
+Connecting the Login Feature (Friend's Work) to This Code:
+    Your friend's login screen must do the following on successful login:
+    1. Receive the { token, user } response from POST /api/auth/login
+    2. Call: context.read<AuthProvider>().saveSession(
+         userId: response.user.id,
+         role:   response.user.role,
+         name:   response.user.name,
+         jwt:    response.token,
+       );
+    3. Navigate to the home screen: Navigator.pushReplacementNamed(context, '/home')
+    Once this is done, every other screen (YourItems, Home, Details) will
+    automatically work correctly with the real user data because they all read
+    from AuthProvider and ApiClient handles the JWT automatically.
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

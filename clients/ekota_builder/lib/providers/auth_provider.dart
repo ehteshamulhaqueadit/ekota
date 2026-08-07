@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final _storage = const FlutterSecureStorage();
-
   String? userId;
   String? role; // 'producer' | 'investor' | 'renter' | 'admin'
   String? name;
@@ -12,9 +10,10 @@ class AuthProvider extends ChangeNotifier {
   Future<void> loadFromStorage() async {
     isLoading = true;
     notifyListeners();
-    userId = await _storage.read(key: 'userId');
-    role = await _storage.read(key: 'role');
-    name = await _storage.read(key: 'name');
+    final prefs = await SharedPreferences.getInstance();
+    userId = prefs.getString('userId');
+    role = prefs.getString('role');
+    name = prefs.getString('name');
     isLoading = false;
     notifyListeners();
   }
@@ -25,10 +24,11 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String jwt,
   }) async {
-    await _storage.write(key: 'userId', value: userId);
-    await _storage.write(key: 'role', value: role);
-    await _storage.write(key: 'name', value: name);
-    await _storage.write(key: 'jwt', value: jwt);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('userId', userId);
+    await prefs.setString('role', role);
+    await prefs.setString('name', name);
+    await prefs.setString('jwt', jwt);
     this.userId = userId;
     this.role = role;
     this.name = name;
@@ -36,7 +36,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await _storage.deleteAll();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
     userId = null;
     role = null;
     name = null;

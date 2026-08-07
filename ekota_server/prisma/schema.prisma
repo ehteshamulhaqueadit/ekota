@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  role      String   // 'producer', 'investor', 'renter', 'admin'
+  createdAt DateTime @default(now())
+
+  // Relations
+  listings  Listing[]
+  comments  Comment[]
+  reviews   Review[]
+}
+
+model Listing {
+  id                 String   @id @default(uuid())
+  assetName          String
+  category           String
+  fundingTarget      Float
+  rentalPrice        Float
+  description        String
+  specifications     String?
+  imageUrls          String[]
+  videoUrls          String[]
+  productionTimeType String   // 'instant', 'scheduled'
+  productionDays     Int?
+  
+  // Statuses
+  status             String   @default("active")
+  campaignStatus     String   @default("funding")
+  
+  // Derived / computed fields can be calculated on the fly or stored
+  upvotes            Int      @default(0)
+  downvotes          Int      @default(0)
+  
+  producerId         String
+  producer           User     @relation(fields: [producerId], references: [id])
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relations
+  comments           Comment[]
+  reviews            Review[]
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  text       String
+  listingId  String
+  listing    Listing  @relation(fields: [listingId], references: [id])
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  reply      String?  // The producer's reply
+  createdAt  DateTime @default(now())
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  rating     Int
+  text       String
+  listingId  String
+  listing    Listing  @relation(fields: [listingId], references: [id])
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
+}

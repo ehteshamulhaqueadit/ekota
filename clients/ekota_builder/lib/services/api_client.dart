@@ -1,16 +1,15 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
   // Change this to your actual backend URL when the server is ready.
-  // For Windows desktop: http://localhost:3000/api
-  static const _baseUrl = 'http://localhost:3000/api';
-
-  final _storage = const FlutterSecureStorage();
+  // For Android Physical Device: http://192.168.0.102:3000/api
+  static const _baseUrl = 'http://192.168.0.102:3000/api';
 
   Future<Map<String, String>> _headers() async {
-    final token = await _storage.read(key: 'jwt');
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('jwt');
     return {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',

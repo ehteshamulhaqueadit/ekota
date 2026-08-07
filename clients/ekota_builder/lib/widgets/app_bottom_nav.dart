@@ -32,7 +32,7 @@ class AppBottomNav extends StatelessWidget {
       onTap: () => Navigator.pushReplacementNamed(ctx, route),
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

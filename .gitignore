@@ -22,6 +22,46 @@ coverage/
 out/
 *.tsbuildinfo
 
+# Client app junk
+clients/**/node_modules/
+clients/**/dist/
+clients/**/build/
+clients/**/coverage/
+clients/**/.vite/
+clients/**/.parcel-cache/
+clients/**/.turbo/
+clients/**/.cache/
+
+# Flutter / Dart app junk
+clients/**/.dart_tool/
+clients/**/.flutter-plugins
+clients/**/.flutter-plugins-dependencies
+clients/**/.packages
+clients/**/pubspec.lock
+clients/**/.pub-cache/
+clients/**/.gradle/
+clients/**/android/.gradle/
+clients/**/android/app/build/
+clients/**/ios/Pods/
+clients/**/ios/.symlinks/
+clients/**/ios/Flutter/Flutter.framework/
+clients/**/ios/Flutter/ephemeral/
+clients/**/macos/Flutter/ephemeral/
+clients/**/linux/flutter/ephemeral/
+clients/**/windows/flutter/ephemeral/
+clients/**/web/.dart_tool/
+
+# Server junk
+ekota_server/node_modules/
+ekota_server/dist/
+ekota_server/build/
+ekota_server/coverage/
+ekota_server/.prisma/
+ekota_server/*.log
+ekota_server/npm-debug.log*
+ekota_server/yarn-debug.log*
+ekota_server/yarn-error.log*
+
 # Flutter
 **/build/
 **/.dart_tool/

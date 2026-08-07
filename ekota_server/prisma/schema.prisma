@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  RENTER
+  INVESTOR
+  PRODUCER
+}
+
+enum KycStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  email           String    @unique @db.VarChar(255)
+  passwordHash    String    @map("password_hash") @db.VarChar(255)
+  fullName        String    @map("full_name") @db.VarChar(150)
+  phoneNumber     String?   @map("phone_number") @db.VarChar(20)
+  role            UserRole
+  isEmailVerified Boolean   @default(false) @map("is_email_verified")
+  isBlocked       Boolean   @default(false) @map("is_blocked")
+  blockedReason   String?   @map("blocked_reason")
+  kycStatus       KycStatus @default(UNVERIFIED) @map("kyc_status")
+  diditSessionId  String?   @map("didit_session_id") @db.VarChar(255)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("users")
+}
+
+model OtpVerification {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @db.VarChar(255)
+  otpCode   String   @map("otp_code") @db.VarChar(10)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  isUsed    Boolean   @default(false) @map("is_used")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("otp_verifications")
+}

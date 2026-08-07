@@ -1,0 +1,53 @@
+REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+
+-- Step 1: Create Database
+CREATE DATABASE ekota_db;
+
+-- Step 2: Connect to the newly created database
+\c ekota_db
+
+CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'RENTER', 'INVESTOR', 'PRODUCER');
+CREATE TYPE "KycStatus" AS ENUM ('UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED');
+CREATE TYPE "CampaignStatus" AS ENUM ('DRAFT', 'FUNDING', 'FULLY_FUNDED', 'IN_PRODUCTION', 'DELIVERED');
+
+
+-- Core User Accounts
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(150) NOT NULL,
+    phone_number VARCHAR(20),
+    role "UserRole" NOT NULL,
+    is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    is_blocked BOOLEAN DEFAULT FALSE,
+    blocked_reason TEXT,
+    kyc_status "KycStatus" DEFAULT 'UNVERIFIED',
+    didit_session_id VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS is_email_verified BOOLEAN NOT NULL DEFAULT FALSE;
+
+
+-- OTP Store for Registration & Password Reset
+CREATE TABLE otp_verifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) NOT NULL,
+    otp_code VARCHAR(10) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    is_used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE USER ekota_backend WITH PASSWORD 'ekota1234';
+
+GRANT CONNECT ON DATABASE ekota_db TO ekota_backend;
+GRANT USAGE ON SCHEMA public TO ekota_backend;
+
+-- Now User ekota_backend has permission to access only ekota_db 
+
+-- use this username and password for devloping only

@@ -1,0 +1,66 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/payment.dart';
+
+class PaymentService {
+  final String baseUrl;
+
+  PaymentService({this.baseUrl = 'http://localhost:5000/api/payments'});
+
+  Future<Map<String, dynamic>> initiatePayment({
+    required double amount,
+    required String paymentType,
+    required String token,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/initiate'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'amount': amount,
+          'paymentType': paymentType,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return {
+          'success': true,
+          'gatewayPageUrl': data['gatewayPageUrl'],
+          'tranId': data['tranId'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to initiate payment',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
+  }
+
+  Future<List<PaymentModel>> fetchUserPayments(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/my-payments'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List list = data['payments'] ?? [];
+        return list.map((item) => PaymentModel.fromJson(item)).toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+}

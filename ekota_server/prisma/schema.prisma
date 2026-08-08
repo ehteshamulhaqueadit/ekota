@@ -21,6 +21,14 @@ enum KycStatus {
   REJECTED
 }
 
+enum CampaignStatus {
+  DRAFT
+  FUNDING
+  FULLY_FUNDED
+  IN_PRODUCTION
+  DELIVERED
+}
+
 model User {
   id              String    @id @default(uuid()) @db.Uuid
   email           String    @unique @db.VarChar(255)
@@ -36,6 +44,11 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  // Relations
+  listings        Listing[]
+  comments        Comment[]
+  reviews         Review[]
+
   @@map("users")
 }
 
@@ -48,4 +61,58 @@ model OtpVerification {
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("otp_verifications")
+}
+
+model Listing {
+  id                 String   @id @default(uuid()) @db.Uuid
+  assetName          String
+  category           String
+  fundingTarget      Float
+  rentalPrice        Float
+  description        String
+  specifications     String?
+  imageUrls          String[]
+  videoUrls          String[]
+  productionTimeType String   // 'instant', 'scheduled'
+  productionDays     Int?
+  
+  // Statuses
+  status             String   @default("active")
+  campaignStatus     String   @default("funding")
+  
+  // Derived / computed fields
+  upvotes            Int      @default(0)
+  downvotes          Int      @default(0)
+  
+  producerId         String   @db.Uuid
+  producer           User     @relation(fields: [producerId], references: [id])
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relations
+  comments           Comment[]
+  reviews            Review[]
+}
+
+model Comment {
+  id         String   @id @default(uuid()) @db.Uuid
+  text       String
+  listingId  String   @db.Uuid
+  listing    Listing  @relation(fields: [listingId], references: [id])
+  authorId   String   @db.Uuid
+  author     User     @relation(fields: [authorId], references: [id])
+  reply      String?  // The producer's reply
+  createdAt  DateTime @default(now())
+}
+
+model Review {
+  id         String   @id @default(uuid()) @db.Uuid
+  rating     Int
+  text       String
+  listingId  String   @db.Uuid
+  listing    Listing  @relation(fields: [listingId], references: [id])
+  authorId   String   @db.Uuid
+  author     User     @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
 }

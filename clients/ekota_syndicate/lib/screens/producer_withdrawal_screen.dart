@@ -13,41 +13,46 @@ class ProducerWithdrawalScreen extends StatefulWidget {
 
 class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
   final WithdrawalService _service = WithdrawalService();
-  double _availableBalance = 342500;
-  bool _showSuccessBanner = false;
-  String _lastRequestedAmount = '';
+  ProducerBalanceModel? _balance;
+  List<WithdrawalRequestModel> _requests = [];
+  bool _isLoading = false;
 
-  List<Map<String, dynamic>> _history = [
-    {
-      'amount': '৳142,500',
-      'method': 'bKash · 14 Jul 2026',
-      'status': 'Pending',
-      'statusColor': Colors.orange,
-    },
-    {
-      'amount': '৳98,500',
-      'method': 'bKash · 10 Jun 2026',
-      'status': 'Paid',
-      'statusColor': Colors.blue,
-    },
-    {
-      'amount': '৳75,000',
-      'method': 'bKash · 15 May 2026',
-      'status': 'Approved',
-      'statusColor': Colors.green,
-    },
-  ];
+  final ProducerBalanceModel _fallbackBalance = ProducerBalanceModel(
+    totalEarnings: 485000.0,
+    availableBalance: 342500.0,
+    pendingWithdrawal: 142500.0,
+    totalWithdrawn: 0.0,
+  );
 
-  void _openWithdrawalModal() {
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final b = await _service.fetchBalance(widget.authToken);
+    final r = await _service.fetchMyRequests(widget.authToken);
+    setState(() {
+      _balance = b ?? _fallbackBalance;
+      if (r.isNotEmpty) _requests = r;
+    });
+  }
+
+  void _showWithdrawalModal() {
     final amountController = TextEditingController();
+    final bankNameController = TextEditingController();
+    final accountHolderController = TextEditingController();
     final accountNumberController = TextEditingController();
-    final noteController = TextEditingController();
-    String selectedMethod = 'bKash';
+    final branchController = TextEditingController();
+    final routingController = TextEditingController();
+    final mobileNumberController = TextEditingController();
+    String selectedMethod = 'BANK_TRANSFER';
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: Color(0xFF1E293B),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) {
         return StatefulBuilder(
@@ -64,115 +69,205 @@ class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Withdrawal Progress Bar (1 -> 2 -> 3)
-                    Text('Withdrawal Progress', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[700])),
-                    SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: const [
-                        _stepCircle('1', 'Request', true),
-                        _stepLine(),
-                        _stepCircle('2', 'Admin Review', false),
-                        _stepLine(),
-                        _stepCircle('3', 'Completed', false),
-                      ],
-                    ),
-
-                    SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Withdrawal Request', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                        Text(
+                          'Request Payout from Admin',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
                         IconButton(
                           icon: Icon(Icons.close, color: Colors.grey),
                           onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
+                    SizedBox(height: 12),
+                    Text('Select Payout Method', style: TextStyle(color: Colors.grey[400], fontSize: 12, fontWeight: FontWeight.bold)),
+                    SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: ['BANK_TRANSFER', 'BKASH', 'NAGAD', 'ROCKET'].map((m) {
+                        final isSelected = selectedMethod == m;
+                        final label = m == 'BANK_TRANSFER' ? 'Bank Transfer' : m;
+                        return ChoiceChip(
+                          label: Text(label),
+                          selected: isSelected,
+                          selectedColor: Colors.amber[700],
+                          onSelected: (val) {
+                            if (val) setModalState(() => selectedMethod = m);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    SizedBox(height: 16),
 
-                    SizedBox(height: 14),
-                    Text('Withdrawal Amount', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+                    Text('Withdrawal Amount (BDT)', style: TextStyle(color: Colors.grey[300], fontSize: 12, fontWeight: FontWeight.bold)),
                     SizedBox(height: 6),
                     TextField(
                       controller: amountController,
                       keyboardType: TextInputType.number,
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                       decoration: InputDecoration(
-                        hintText: '৳ 0.00',
+                        hintText: 'Enter amount to withdraw',
+                        hintStyle: TextStyle(color: Colors.grey[600]),
+                        prefixText: '৳ ',
+                        prefixStyle: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
                         filled: true,
-                        fillColor: Color(0xFFF9FAFB),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey[300]!)),
+                        fillColor: Colors.black26,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                     SizedBox(height: 4),
-                    Text('Available: ৳342,500', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-
-                    SizedBox(height: 14),
-                    Text('Withdrawal Method', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)),
-                    SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      value: selectedMethod,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Color(0xFFF9FAFB),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      items: ['bKash', 'Nagad', 'Rocket', 'Bank Transfer']
-                          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                          .toList(),
-                      onChanged: (val) => setModalState(() => selectedMethod = val!),
+                    Text(
+                      'Available for payout: ৳${(_balance?.availableBalance ?? 342500).toStringAsFixed(2)} BDT',
+                      style: TextStyle(color: Colors.greenAccent, fontSize: 11),
                     ),
 
                     SizedBox(height: 14),
-                    Text('Account Number', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)),
-                    SizedBox(height: 6),
-                    TextField(
-                      controller: accountNumberController,
-                      keyboardType: TextInputType.phone,
-                      decoration: InputDecoration(
-                        hintText: 'Mobile number',
-                        filled: true,
-                        fillColor: Color(0xFFF9FAFB),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    if (selectedMethod == 'BANK_TRANSFER') ...[
+                      TextField(
+                        controller: bankNameController,
+                        style: TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'Bank Name (e.g. Dutch-Bangla Bank, Brac Bank)',
+                          labelStyle: TextStyle(color: Colors.grey[400]),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
                       ),
-                    ),
-
-                    SizedBox(height: 14),
-                    Text('Optional Note', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)),
-                    SizedBox(height: 6),
-                    TextField(
-                      controller: noteController,
-                      decoration: InputDecoration(
-                        hintText: 'Any additional details...',
-                        filled: true,
-                        fillColor: Color(0xFFF9FAFB),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      SizedBox(height: 10),
+                      TextField(
+                        controller: accountHolderController,
+                        style: TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'Account Holder Name',
+                          labelStyle: TextStyle(color: Colors.grey[400]),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
                       ),
-                    ),
+                      SizedBox(height: 10),
+                      TextField(
+                        controller: accountNumberController,
+                        style: TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'Account Number',
+                          labelStyle: TextStyle(color: Colors.grey[400]),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: branchController,
+                              style: TextStyle(color: Colors.white),
+                              decoration: InputDecoration(
+                                labelText: 'Branch Name',
+                                labelStyle: TextStyle(color: Colors.grey[400]),
+                                filled: true,
+                                fillColor: Colors.black26,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: routingController,
+                              style: TextStyle(color: Colors.white),
+                              decoration: InputDecoration(
+                                labelText: 'Routing Number',
+                                labelStyle: TextStyle(color: Colors.grey[400]),
+                                filled: true,
+                                fillColor: Colors.black26,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      TextField(
+                        controller: mobileNumberController,
+                        keyboardType: TextInputType.phone,
+                        style: TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: '$selectedMethod Mobile Wallet Number',
+                          labelStyle: TextStyle(color: Colors.grey[400]),
+                          prefixIcon: Icon(Icons.phone_android, color: Colors.amber),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ],
 
-                    SizedBox(height: 24),
+                    SizedBox(height: 22),
                     SizedBox(
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF047857),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          backgroundColor: Colors.amber[600],
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        onPressed: () {
-                          final reqAmt = amountController.text.trim();
+                        onPressed: () async {
+                          final amount = double.tryParse(amountController.text.trim());
+                          if (amount == null || amount <= 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Please enter a valid withdrawal amount')),
+                            );
+                            return;
+                          }
+
+                          Map<String, dynamic> accountDetails = {};
+                          if (selectedMethod == 'BANK_TRANSFER') {
+                            accountDetails = {
+                              'bankName': bankNameController.text.trim(),
+                              'accountName': accountHolderController.text.trim(),
+                              'accountNumber': accountNumberController.text.trim(),
+                              'branchName': branchController.text.trim(),
+                              'routingNumber': routingController.text.trim(),
+                            };
+                          } else {
+                            accountDetails = {
+                              'mobileNumber': mobileNumberController.text.trim(),
+                            };
+                          }
+
                           Navigator.pop(context);
-                          setState(() {
-                            _lastRequestedAmount = reqAmt.isNotEmpty ? '৳$reqAmt' : '৳142,500';
-                            _history.insert(0, {
-                              'amount': _lastRequestedAmount,
-                              'method': '$selectedMethod · Today',
-                              'status': 'Pending',
-                              'statusColor': Colors.orange,
-                            });
-                            _showSuccessBanner = true;
-                          });
+                          setState(() => _isLoading = true);
+
+                          final result = await _service.submitWithdrawal(
+                            amount: amount,
+                            method: selectedMethod,
+                            accountDetails: accountDetails,
+                            token: widget.authToken,
+                          );
+
+                          setState(() => _isLoading = false);
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(result['message'] ?? 'Done'),
+                              backgroundColor: result['success'] == true ? Colors.green : Colors.redAccent,
+                            ),
+                          );
+
+                          _loadData();
                         },
-                        child: Text('CONFIRM', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                        child: Text(
+                          'Submit Request to Admin',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black),
+                        ),
                       ),
                     ),
                   ],
@@ -187,203 +282,192 @@ class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Color(0xFF052E21),
-      appBar: AppBar(
-        backgroundColor: Color(0xFF052E21),
-        elevation: 0,
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: const [
-            Text('Renter/Investor', style: TextStyle(color: Colors.white70, fontSize: 13)),
-            Text('Producer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-            Text('Admin', style: TextStyle(color: Colors.white70, fontSize: 13)),
-          ],
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Good morning,', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  Text('Nilufar Rashidova', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  SizedBox(height: 16),
+    final bal = _balance ?? _fallbackBalance;
 
-                  // Available Balance Card (Figma page 4)
-                  Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Color(0xFF0B4A34),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: SingleChildScrollView(
+        physics: AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Producer Balance Card
+            Card(
+              elevation: 6,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              color: Color(0xFF1E293B),
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('AVAILABLE BALANCE', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
-                        SizedBox(height: 4),
-                        Text('৳342,500', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-                        SizedBox(height: 4),
-                        Row(
-                          children: const [
-                            Icon(Icons.access_time, size: 12, color: Colors.white60),
-                            SizedBox(width: 4),
-                            Text('Last updated: Today, 09:00 AM', style: TextStyle(color: Colors.white60, fontSize: 11)),
-                          ],
-                        ),
+                        Text('Available Balance', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
+                        Icon(Icons.account_balance_wallet, color: Colors.amberAccent),
                       ],
                     ),
-                  ),
-
-                  SizedBox(height: 16),
-
-                  // Request Withdrawal Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: _openWithdrawalModal,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFF047857),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: Text('Withdrawal Request', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            if (_showSuccessBanner)
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(20),
-                color: Color(0xFF047857),
-                child: Column(
-                  children: const [
-                    Text('Congratulation!', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                     SizedBox(height: 4),
-                    Text('Withdrawal Sucessfull', style: TextStyle(color: Colors.white70, fontSize: 16)),
+                    Text(
+                      '৳${bal.availableBalance.toStringAsFixed(2)} BDT',
+                      style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: Colors.amberAccent),
+                    ),
+                    SizedBox(height: 16),
+                    Divider(color: Colors.white12),
+                    SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildStatItem('Total Earnings', '৳${bal.totalEarnings.toStringAsFixed(0)}'),
+                        _buildStatItem('Pending Payout', '৳${bal.pendingWithdrawal.toStringAsFixed(0)}'),
+                        _buildStatItem('Total Withdrawn', '৳${bal.totalWithdrawn.toStringAsFixed(0)}'),
+                      ],
+                    ),
+                    SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        icon: Icon(Icons.arrow_circle_up_outlined, color: Colors.black),
+                        label: Text(
+                          'Request Payout to Admin',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.greenAccent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: _showWithdrawalModal,
+                      ),
+                    ),
                   ],
                 ),
               ),
+            ),
 
-            // History Container
-            Container(
-              margin: EdgeInsets.only(top: 16),
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Withdrawal History', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  SizedBox(height: 16),
+            SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Withdrawal Requests History',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                IconButton(
+                  icon: Icon(Icons.refresh, color: Colors.greenAccent),
+                  onPressed: _loadData,
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
 
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: NeverScrollableScrollPhysics(),
-                    itemCount: _history.length,
-                    itemBuilder: (context, index) {
-                      final item = _history[index];
-                      return Container(
-                        margin: EdgeInsets.only(bottom: 12),
-                        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Color(0xFFF9FAFB),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[200]!),
-                        ),
-                        child: Row(
+            // Requests List
+            ListView.builder(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              itemCount: _requests.length,
+              itemBuilder: (context, index) {
+                final req = _requests[index];
+                final isPending = req.status == 'PENDING';
+                final isApproved = req.status == 'APPROVED' || req.status == 'PROCESSED';
+
+                return Card(
+                  margin: EdgeInsets.only(bottom: 12),
+                  color: Color(0xFF1E293B),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor: Color(0xFFECFDF5),
-                                  child: Icon(Icons.arrow_downward, color: Color(0xFF047857), size: 18),
-                                ),
-                                SizedBox(width: 12),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(item['amount'], style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87)),
-                                    Text(item['method'], style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                                  ],
-                                ),
-                              ],
+                            Text(
+                              '৳${req.amount.toStringAsFixed(2)} BDT',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.amberAccent),
                             ),
                             Container(
                               padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: (item['statusColor'] as Color).withOpacity(0.1),
+                                color: isApproved
+                                    ? Colors.green.withOpacity(0.15)
+                                    : isPending
+                                        ? Colors.amber.withOpacity(0.15)
+                                        : Colors.red.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: isApproved
+                                      ? Colors.greenAccent
+                                      : isPending
+                                          ? Colors.amberAccent
+                                          : Colors.redAccent,
+                                ),
                               ),
                               child: Text(
-                                item['status'],
-                                style: TextStyle(color: item['statusColor'], fontWeight: FontWeight.bold, fontSize: 11),
+                                req.status,
+                                style: TextStyle(
+                                  color: isApproved
+                                      ? Colors.greenAccent
+                                      : isPending
+                                          ? Colors.amberAccent
+                                          : Colors.redAccent,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      );
-                    },
+                        SizedBox(height: 8),
+                        Text(
+                          'Method: ${req.method}',
+                          style: TextStyle(color: Colors.grey[300], fontSize: 13),
+                        ),
+                        if (req.transactionRef != null) ...[
+                          SizedBox(height: 4),
+                          Text(
+                            'Ref / Proof ID: ${req.transactionRef}',
+                            style: TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                        if (req.adminNote != null) ...[
+                          SizedBox(height: 4),
+                          Text(
+                            'Admin Note: ${req.adminNote}',
+                            style: TextStyle(color: Colors.grey[400], fontSize: 12, fontStyle: FontStyle.italic),
+                          ),
+                        ],
+                        SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            req.createdAt.split('T')[0],
+                            style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 3,
-        selectedItemColor: Color(0xFF047857),
-        unselectedItemColor: Colors.grey,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Dashboard'),
-          BottomNavigationBarItem(icon: Icon(Icons.folder), label: 'Projects'),
-          BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'Wallet'),
-          BottomNavigationBarItem(icon: Icon(Icons.monetization_on), label: 'Payouts'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
-      ),
     );
   }
-}
 
-class _stepCircle extends StatelessWidget {
-  final String num;
-  final String label;
-  final bool active;
-  const _stepCircle(this.num, this.label, this.active);
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildStatItem(String label, String value) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        CircleAvatar(
-          radius: 12,
-          backgroundColor: active ? Color(0xFF047857) : Colors.grey[300],
-          child: Text(num, style: TextStyle(color: active ? Colors.white : Colors.black87, fontSize: 11, fontWeight: FontWeight.bold)),
-        ),
-        SizedBox(height: 4),
-        Text(label, style: TextStyle(fontSize: 10, color: active ? Color(0xFF047857) : Colors.grey[600])),
+        Text(label, style: TextStyle(color: Colors.grey[400], fontSize: 11)),
+        SizedBox(height: 2),
+        Text(value, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
       ],
     );
-  }
-}
-
-class _stepLine extends StatelessWidget {
-  const _stepLine();
-  @override
-  Widget build(BuildContext context) {
-    return Container(width: 30, height: 1, color: Colors.grey[300]);
   }
 }

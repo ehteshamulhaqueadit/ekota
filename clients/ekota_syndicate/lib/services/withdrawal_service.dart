@@ -1,20 +1,12 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../models/withdrawal_model.dart';
-
-String get defaultWithdrawalApiUrl {
-  if (!kIsWeb && Platform.isAndroid) {
-    return 'http://10.0.2.2:5000/api/withdrawals';
-  }
-  return 'http://localhost:5000/api/withdrawals';
-}
 
 class WithdrawalService {
   final String baseUrl;
 
-  WithdrawalService({String? baseUrl}) : baseUrl = baseUrl ?? defaultWithdrawalApiUrl;
+  WithdrawalService({String? customUrl}) : baseUrl = customUrl ?? ApiConfig.withdrawalApiUrl;
 
   Future<ProducerBalanceModel?> fetchBalance(String token) async {
     try {
@@ -73,12 +65,12 @@ class WithdrawalService {
 
       final data = jsonDecode(response.body);
       if (response.statusCode == 201) {
-        return {'success': true, 'message': 'Request submitted successfully'};
+        return {'success': true, 'message': 'Withdrawal request submitted to Admin successfully'};
       } else {
         return {'success': false, 'message': data['message'] ?? 'Submission failed'};
       }
     } catch (e) {
-      return {'success': false, 'message': e.toString()};
+      return {'success': false, 'message': 'Network connection failed. Is backend server running?'};
     }
   }
 }

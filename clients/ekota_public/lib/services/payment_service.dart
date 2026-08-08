@@ -1,20 +1,12 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../models/payment.dart';
-
-String get defaultPaymentApiUrl {
-  if (!kIsWeb && Platform.isAndroid) {
-    return 'http://10.0.2.2:5000/api/payments';
-  }
-  return 'http://localhost:5000/api/payments';
-}
 
 class PaymentService {
   final String baseUrl;
 
-  PaymentService({String? baseUrl}) : baseUrl = baseUrl ?? defaultPaymentApiUrl;
+  PaymentService({String? customUrl}) : baseUrl = customUrl ?? ApiConfig.paymentApiUrl;
 
   Future<Map<String, dynamic>> initiatePayment({
     required double amount,
@@ -40,17 +32,18 @@ class PaymentService {
           'success': true,
           'gatewayPageUrl': data['gatewayPageUrl'],
           'tranId': data['tranId'],
+          'amount': data['amount'],
         };
       } else {
         return {
           'success': false,
-          'message': data['message'] ?? 'Failed to initiate payment',
+          'message': data['message'] ?? 'Failed to initiate payment session',
         };
       }
     } catch (e) {
       return {
         'success': false,
-        'message': e.toString(),
+        'message': 'Network connection error. Is backend server running?',
       };
     }
   }

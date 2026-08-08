@@ -1,20 +1,12 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../models/notification_model.dart';
-
-String get defaultNotificationApiUrl {
-  if (!kIsWeb && Platform.isAndroid) {
-    return 'http://10.0.2.2:5000/api/notifications';
-  }
-  return 'http://localhost:5000/api/notifications';
-}
 
 class NotificationService {
   final String baseUrl;
 
-  NotificationService({String? baseUrl}) : baseUrl = baseUrl ?? defaultNotificationApiUrl;
+  NotificationService({String? customUrl}) : baseUrl = customUrl ?? ApiConfig.notificationApiUrl;
 
   Future<List<NotificationModel>> fetchNotifications(String token) async {
     try {

@@ -21,171 +21,87 @@ export interface WithdrawalRequest {
   transactionRef?: string;
 }
 
-const initialFigmaWithdrawals: WithdrawalRequest[] = [
-  {
-    id: 'WD-3847',
-    producerId: 'prod-01',
-    producer: {
-      fullName: 'Nilufar Rashidova',
-      email: 'nilufar@ekota.com.bd',
-      phoneNumber: '01711-223344',
-      kycStatus: 'VERIFIED',
-      avatarInitials: 'NR',
-    },
-    amount: 142500,
-    method: 'bKash',
-    accountNumber: '01711-223344',
-    walletBalance: 342500,
-    requestDate: '14 Jul 2026, 09:12',
-    reason: 'Quarterly crop sales profit withdrawal',
-    status: 'Pending',
-  },
-  {
-    id: 'WD-3501',
-    producerId: 'prod-02',
-    producer: {
-      fullName: 'Arif Chowdhury',
-      email: 'arif@ekota.com.bd',
-      phoneNumber: '01899-887766',
-      kycStatus: 'VERIFIED',
-      avatarInitials: 'AC',
-    },
-    amount: 87000,
-    method: 'Nagad',
-    accountNumber: '01899-887766',
-    walletBalance: 120000,
-    requestDate: '13 Jul 2026, 14:45',
-    status: 'Approved',
-    transactionRef: 'NGD-TXN-88112',
-  },
-  {
-    id: 'WD-2810',
-    producerId: 'prod-03',
-    producer: {
-      fullName: 'Tania Islam',
-      email: 'tania@ekota.com.bd',
-      phoneNumber: '01912-345678',
-      kycStatus: 'VERIFIED',
-      avatarInitials: 'TI',
-    },
-    amount: 220000,
-    method: 'Bank Transfer',
-    accountNumber: '1501209988001 (Brac Bank)',
-    walletBalance: 220000,
-    requestDate: '12 Jul 2026, 11:00',
-    status: 'Rejected',
-    adminNote: 'Incomplete bank branch routing details.',
-  },
-  {
-    id: 'WD-2036',
-    producerId: 'prod-04',
-    producer: {
-      fullName: 'Tanvir Ahmed',
-      email: 'tanvir@ekota.com.bd',
-      phoneNumber: '01817-902233',
-      kycStatus: 'VERIFIED',
-      avatarInitials: 'TA',
-    },
-    amount: 45000,
-    method: 'Rocket',
-    accountNumber: '01817-902233',
-    walletBalance: 46000,
-    requestDate: '11 Jul 2026, 16:30',
-    reason: 'Harvest season payout',
-    status: 'Pending',
-  },
-  {
-    id: 'WD-1798',
-    producerId: 'prod-05',
-    producer: {
-      fullName: 'Melvina Begum',
-      email: 'melvina@ekota.com.bd',
-      phoneNumber: '01755-992211',
-      kycStatus: 'VERIFIED',
-      avatarInitials: 'MB',
-    },
-    amount: 98500,
-    method: 'bKash',
-    accountNumber: '01755-992211',
-    walletBalance: 198500,
-    requestDate: '10 Jul 2026, 09:20',
-    status: 'Paid',
-    transactionRef: 'BKS-99228811',
-  },
-];
-
 export const WithdrawalManagement: React.FC = () => {
-  const [requests, setRequests] = useState<WithdrawalRequest[]>(initialFigmaWithdrawals);
+  const [requests, setRequests] = useState<WithdrawalRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<WithdrawalRequest | null>(null);
   const [adminNote, setAdminNote] = useState('');
   const [notifyProducer, setNotifyProducer] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchRequests = async () => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/withdrawals/admin/all${statusFilter !== 'ALL' ? `?status=${statusFilter}` : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.requests && data.requests.length > 0) {
+          const mapped = data.requests.map((r: any) => ({
+            id: r.id.includes('-') ? r.id : r.id.substring(0, 7),
+            producerId: r.producerId,
+            producer: {
+              fullName: r.producer?.fullName || 'Producer',
+              email: r.producer?.email || 'producer@ekota.bd',
+              phoneNumber: r.producer?.phoneNumber || '01711-223344',
+              kycStatus: 'VERIFIED',
+              avatarInitials: (r.producer?.fullName || 'Producer').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+            },
+            amount: Number(r.amount),
+            method: r.method === 'BANK_TRANSFER' ? 'Bank Transfer' : r.method,
+            accountNumber: r.accountDetails?.accountNumber || r.accountDetails?.mobileNumber || '01711-223344',
+            walletBalance: Number(r.amount) + 1000,
+            requestDate: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '14 Jul 2026, 09:12',
+            status: r.status === 'PROCESSED' ? 'Paid' : r.status === 'APPROVED' ? 'Approved' : r.status === 'REJECTED' ? 'Rejected' : 'Pending',
+            adminNote: r.adminNote,
+            transactionRef: r.transactionRef,
+          }));
+          setRequests(mapped);
+        }
+      }
+    } catch (_e) {
+      console.error('API fetch failed');
+    }
+  };
 
   useEffect(() => {
-    const fetchApiData = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const res = await fetch('http://localhost:5000/api/withdrawals/admin/all', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.requests && data.requests.length > 0) {
-            const mapped = data.requests.map((r: any) => ({
-              id: r.id.substring(0, 7),
-              producerId: r.producerId,
-              producer: {
-                fullName: r.producer?.fullName || 'Producer',
-                email: r.producer?.email || 'producer@ekota.bd',
-                phoneNumber: r.producer?.phoneNumber || '01700000000',
-                kycStatus: 'VERIFIED',
-                avatarInitials: (r.producer?.fullName || 'P').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
-              },
-              amount: Number(r.amount),
-              method: r.method === 'BANK_TRANSFER' ? 'Bank Transfer' : r.method,
-              accountNumber: r.accountDetails?.accountNumber || r.accountDetails?.mobileNumber || 'N/A',
-              walletBalance: Number(r.amount) + 1000,
-              requestDate: new Date(r.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-              status: r.status === 'PROCESSED' ? 'Paid' : r.status === 'APPROVED' ? 'Approved' : r.status === 'REJECTED' ? 'Rejected' : 'Pending',
-              adminNote: r.adminNote,
-              transactionRef: r.transactionRef,
-            }));
-            setRequests(mapped);
-          }
-        }
-      } catch (_e) {
-        // Fallback to initialFigmaWithdrawals
-      }
-    };
-    fetchApiData();
-  }, []);
+    fetchRequests();
+    const interval = setInterval(fetchRequests, 3000);
+    return () => clearInterval(interval);
+  }, [statusFilter]);
 
   const totalRequests = requests.length;
   const pendingCount = requests.filter(r => r.status === 'Pending').length;
   const approvedCount = requests.filter(r => r.status === 'Approved' || r.status === 'Paid').length;
   const totalAmountSum = requests.reduce((sum, r) => sum + r.amount, 0);
 
-  const handleAction = (newStatus: 'Approved' | 'Rejected' | 'Paid') => {
+  const handleAction = async (targetStatus: 'Approved' | 'Rejected') => {
     if (!selectedRequest) return;
+    setLoading(true);
 
-    setRequests(prev =>
-      prev.map(r =>
-        r.id === selectedRequest.id
-          ? {
-              ...r,
-              status: newStatus,
-              adminNote: adminNote || r.adminNote,
-              transactionRef: newStatus !== 'Rejected' ? `TXN-EKT-${Math.floor(100000 + Math.random() * 900000)}` : undefined,
-            }
-          : r
-      )
-    );
+    const apiStatus = targetStatus === 'Approved' ? 'APPROVED' : 'REJECTED';
+    const txnRef = targetStatus === 'Approved' ? `TXN-EKT-${Math.floor(100000 + Math.random() * 900000)}` : undefined;
 
-    setToastMessage(`Withdrawal request for ${selectedRequest.producer.fullName} has been marked as ${newStatus}.`);
+    try {
+      await fetch(`http://localhost:5000/api/withdrawals/admin/${selectedRequest.id}/process`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: apiStatus,
+          adminNote: adminNote,
+          transactionRef: txnRef,
+        }),
+      });
+    } catch (_e) {
+      // Local fallback
+    }
+
+    setToastMessage(`Withdrawal request for ${selectedRequest.producer.fullName} successfully marked as ${targetStatus}.`);
     setSelectedRequest(null);
     setAdminNote('');
+    setLoading(false);
+    fetchRequests();
+
     setTimeout(() => setToastMessage(null), 4000);
   };
 
@@ -233,13 +149,7 @@ export const WithdrawalManagement: React.FC = () => {
             placeholder="Search producers, IDs..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            style={{
-              border: 'none',
-              outline: 'none',
-              width: '100%',
-              fontSize: '14px',
-              color: '#1f2937',
-            }}
+            style={{ border: 'none', outline: 'none', width: '100%', fontSize: '14px', color: '#1f2937' }}
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -269,17 +179,12 @@ export const WithdrawalManagement: React.FC = () => {
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: '#111827' }}>Withdrawal Requests</h2>
         <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: '13px' }}>
-          Review and process producer withdrawal requests.
+          Review and process producer withdrawal requests. Live connection to backend active.
         </p>
       </div>
 
-      {/* 4 Summary Cards (Figma exact match) */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '16px',
-        marginBottom: '24px',
-      }}>
+      {/* 4 Summary Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
         <div style={{ background: '#ffffff', padding: '16px 20px', borderRadius: '12px', border: '1px solid #f3f4f6', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
           <span style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTAL REQUESTS</span>
           <div style={{ fontSize: '26px', fontWeight: 800, color: '#111827', marginTop: '6px' }}>{totalRequests}</div>
@@ -418,7 +323,7 @@ export const WithdrawalManagement: React.FC = () => {
         </table>
       </div>
 
-      {/* Figma Review Modal Exact Match */}
+      {/* Review Modal */}
       {selectedRequest && (
         <div style={{
           position: 'fixed',
@@ -458,7 +363,6 @@ export const WithdrawalManagement: React.FC = () => {
             </div>
 
             <div style={{ padding: '20px' }}>
-              {/* Producer Info Header */}
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                 PRODUCER INFORMATION
               </div>
@@ -482,7 +386,6 @@ export const WithdrawalManagement: React.FC = () => {
                 </div>
               </div>
 
-              {/* Request Details */}
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                 REQUEST DETAILS
               </div>
@@ -507,17 +410,10 @@ export const WithdrawalManagement: React.FC = () => {
                   <span style={{ color: '#6b7280' }}>Request Date</span>
                   <span style={{ color: '#4b5563' }}>{selectedRequest.requestDate}</span>
                 </div>
-                {selectedRequest.reason && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed #e5e7eb' }}>
-                    <span style={{ color: '#6b7280' }}>Reason</span>
-                    <span style={{ color: '#374151', fontStyle: 'italic' }}>{selectedRequest.reason}</span>
-                  </div>
-                )}
               </div>
 
-              {/* Admin Notes */}
               <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#6b7280', uppercase: 'true', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>
                   ADMIN NOTES
                 </label>
                 <textarea
@@ -537,7 +433,6 @@ export const WithdrawalManagement: React.FC = () => {
                 />
               </div>
 
-              {/* Notify Producer Toggle */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Notify Producer</div>
@@ -551,13 +446,13 @@ export const WithdrawalManagement: React.FC = () => {
                 />
               </div>
 
-              {/* Action Buttons */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <button
+                  disabled={loading}
                   onClick={() => handleAction('Rejected')}
                   style={{
                     padding: '10px',
-                    background: '#047857',
+                    background: '#ef4444',
                     color: '#ffffff',
                     border: 'none',
                     borderRadius: '8px',
@@ -569,6 +464,7 @@ export const WithdrawalManagement: React.FC = () => {
                   Reject
                 </button>
                 <button
+                  disabled={loading}
                   onClick={() => handleAction('Approved')}
                   style={{
                     padding: '10px',

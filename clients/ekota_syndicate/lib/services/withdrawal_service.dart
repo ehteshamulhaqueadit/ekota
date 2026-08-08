@@ -1,11 +1,20 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/withdrawal_model.dart';
+
+String get defaultWithdrawalApiUrl {
+  if (!kIsWeb && Platform.isAndroid) {
+    return 'http://10.0.2.2:5000/api/withdrawals';
+  }
+  return 'http://localhost:5000/api/withdrawals';
+}
 
 class WithdrawalService {
   final String baseUrl;
 
-  WithdrawalService({this.baseUrl = 'http://localhost:5000/api/withdrawals'});
+  WithdrawalService({String? baseUrl}) : baseUrl = baseUrl ?? defaultWithdrawalApiUrl;
 
   Future<ProducerBalanceModel?> fetchBalance(String token) async {
     try {

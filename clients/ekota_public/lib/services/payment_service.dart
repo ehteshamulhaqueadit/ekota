@@ -1,11 +1,20 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/payment.dart';
+
+String get defaultPaymentApiUrl {
+  if (!kIsWeb && Platform.isAndroid) {
+    return 'http://10.0.2.2:5000/api/payments';
+  }
+  return 'http://localhost:5000/api/payments';
+}
 
 class PaymentService {
   final String baseUrl;
 
-  PaymentService({this.baseUrl = 'http://localhost:5000/api/payments'});
+  PaymentService({String? baseUrl}) : baseUrl = baseUrl ?? defaultPaymentApiUrl;
 
   Future<Map<String, dynamic>> initiatePayment({
     required double amount,

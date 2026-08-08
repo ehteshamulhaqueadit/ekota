@@ -6,20 +6,7 @@ async function authenticate(req, res, next) {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith('Bearer ')) {
-    // DEV FALLBACK: If no token, mock a Producer user so the Flutter app continues working
-    let mockUser = await prisma.user.findFirst({ where: { email: 'test_producer@example.com' } });
-    if (!mockUser) {
-      mockUser = await prisma.user.create({
-        data: {
-          email: 'test_producer@example.com',
-          fullName: 'Test Producer',
-          passwordHash: 'dummy',
-          role: 'PRODUCER'
-        }
-      });
-    }
-    req.user = mockUser;
-    return next();
+    return res.status(401).json({ message: 'Missing bearer token' });
   }
 
   try {

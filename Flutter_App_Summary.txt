@@ -24,15 +24,18 @@ d:\WORK\Ekota\
     │   ├── Assignment 01 Functional Requirements.docx.pdf  [EXISTED]
     │   └── Module1_Member3_Flutter_Frontend_Guide.md       [EXISTED] - The guide I built from
     │
-    ├── ekota_server/                        <- THE BACKEND (Node.js)
-    │   ├── package.json                    [EDITED]  - Added 'dev' script, all dependencies
-    │   ├── tsconfig.json                   [CREATED] - TypeScript configuration
-    │   ├── .env                            [CREATED] - Holds the database password (DO NOT COMMIT)
+    ├── ekota_server/                        <- THE FULLY MERGED BACKEND (Node.js)
+    │   ├── package.json                    [EDITED]  - Holds all project dependencies
+    │   ├── .env                            [CREATED] - Holds DB connection and JWT secret
     │   ├── prisma/
-    │   │   └── schema.prisma               [CREATED] - Defines the database tables
+    │   │   └── schema.prisma               [EDITED]  - Defines the merged database tables
     │   └── src/
-    │       └── index.ts                    [CREATED] - The entire Express API server
-    │
+    │       ├── app.js                      [EDITED]  - Registers all API routes
+    │       ├── config/                     [EXISTED] - Database & JWT configuration
+    │       ├── controllers/                [EDITED]  - authController.js & listingController.js
+    │       ├── middleware/                 [EDITED]  - auth.js & errorHandler.js
+    │       ├── routes/                     [EDITED]  - authRoutes.js & listingRoutes.js
+    │       └── utils/                      [EXISTED] - Helper functions
     └── clients/
         └── ekota_builder/                   <- THE FRONTEND (Flutter)
             ├── pubspec.yaml                [EDITED]  - Added all Flutter package dependencies
@@ -419,46 +422,34 @@ Step 5 - Voting:
 
 
 ================================================================================
-SECTION 7: THE MOCK LOGIN SYSTEM (IMPORTANT FOR TEAMMATES)
+================================================================================
+SECTION 7: OVERCOMING THE INCOMPLETE LOGIN FRONTEND
 ================================================================================
 
 WHY IT EXISTS:
     The full login screen (Authentication) is being built by a different team member.
     Without a login system, the Flutter app has no JWT token and no userId stored
-    in AuthProvider. This causes two problems:
-    - Problem 1: Every API request would be rejected by the backend with a "401
-      No token provided" error.
-    - Problem 2: The YourItemsScreen calls the API with an empty userId
-      (/api/producers//listings), causing a 404 "Cannot GET" error.
+    in AuthProvider. Every API request would be rejected by the backend with a "401
+    Unauthorized" error.
 
 HOW THE MOCK BYPASS WORKS (Current State):
-
-    On the BACKEND (ekota_server/src/index.ts - authMiddleware):
-    The authMiddleware was modified to detect when no token is provided or when
-    the token is literally the string "null". When this happens, instead of
-    rejecting the request, it:
-    1. Looks in the database for the first user with role = 'producer'.
-    2. If none exists, it automatically creates one: { email: 'producer@test.com',
-       name: 'Test Producer', role: 'producer' }.
+    On the BACKEND (ekota_server/src/middleware/auth.js):
+    The authenticate middleware was modified to detect when no token is provided.
+    When this happens, instead of rejecting the request, it:
+    1. Looks in the database for the mock user "test_producer@example.com".
+    2. If none exists, it automatically creates one.
     3. It sets that user as "req.user" and lets the request proceed.
     This means all requests during testing are automatically treated as if they
     came from this mock producer.
 
-    On the FRONTEND (your_items_screen.dart):
-    The YourItemsScreen reads context.read<AuthProvider>().userId to build the
-    URL. Since AuthProvider has no session, userId is null, making the URL broken.
-    This is a frontend state problem that will be automatically resolved once the
-    login screen is integrated.
-
 HOW TO REMOVE THE MOCK WHEN LOGIN IS READY:
     When the login team member finishes their work:
-    1. In ekota_server/src/index.ts, update authMiddleware to remove the
-       fallback block. The middleware should strictly return 401 if no token
-       is provided (the original, secure behavior).
+    1. In ekota_server/src/middleware/auth.js, delete the "DEV FALLBACK" block
+       at the top of the authenticate function. The middleware should strictly
+       return 401 if no token is provided.
     2. The Flutter frontend will now automatically work correctly because:
        - After login, the JWT token is saved via AuthProvider.saveSession()
-       - ApiClient reads this token from SharedPreferences
-       - AuthProvider.userId is also saved and will produce a valid URL
+       - ApiClient reads this token from SharedPreferences automatically.
     No other changes should be required.
 
 
@@ -466,148 +457,56 @@ HOW TO REMOVE THE MOCK WHEN LOGIN IS READY:
 SECTION 8: HOW TEAMMATES CAN BUILD ON THIS CODEBASE
 ================================================================================
 
-This section explains how to add new features without breaking existing ones.
+This section explains how to add new features seamlessly into the MERGED codebase.
 
 --- HOW TO ADD A NEW BACKEND FEATURE ---
 
-Example: Adding a "Watchlist" feature where investors can save listings.
+Example: Adding a "Watchlist" feature.
 
 Step 1: Update the Database Schema
     Open ekota_server/prisma/schema.prisma and add a new model:
-
+    
     model WatchlistItem {
-      id        String   @id @default(uuid())
-      userId    String
-      listingId String
+      id        String   @id @default(uuid()) @db.Uuid
+      userId    String   @db.Uuid
+      listingId String   @db.Uuid
       user      User     @relation(fields: [userId], references: [id])
       listing   Listing  @relation(fields: [listingId], references: [id])
-      createdAt DateTime @default(now())
+      createdAt DateTime @default(now()) @db.Timestamptz(6)
     }
-
-    Also add the relation to the User and Listing models:
-    In User: watchlist WatchlistItem[]
-    In Listing: watchedBy WatchlistItem[]
+    
+    Also add the relations to User and Listing models!
 
 Step 2: Apply the Schema Change
     Run: npx prisma db push
-    Prisma will automatically add the new table to PostgreSQL. No manual SQL needed.
+    Prisma will automatically add the new table to PostgreSQL.
 
-Step 3: Add the API Endpoints
-    Open ekota_server/src/index.ts and add new route handlers:
-
-    // Add to watchlist
-    app.post('/api/watchlist', authMiddleware, async (req, res) => {
-      const userId = (req as any).user.id;
-      const { listingId } = req.body;
-      const item = await prisma.watchlistItem.create({ data: { userId, listingId } });
-      res.status(201).json(item);
-    });
-
-    // Get user's watchlist
-    app.get('/api/watchlist', authMiddleware, async (req, res) => {
-      const userId = (req as any).user.id;
-      const items = await prisma.watchlistItem.findMany({ where: { userId } });
-      res.json(items);
-    });
-
-Done! The backend is now ready.
-
---- HOW TO ADD A NEW FRONTEND FEATURE ---
-
-Continuing the Watchlist example:
-
-Step 1: Create the Model (if needed)
-    Add lib/models/watchlist_item.dart with fromJson() and toJson() methods.
-
-Step 2: Add to the Service
-    Add new methods to lib/services/listing_service.dart:
-    
-    Future<void> addToWatchlist(String listingId) =>
-        _api.post('/watchlist', {'listingId': listingId});
-    
-    Future<List<WatchlistItem>> getWatchlist() async {
-      final data = await _api.get('/watchlist');
-      return (data as List).map((j) => WatchlistItem.fromJson(j)).toList();
-    }
-
-Step 3: Create a Provider (if complex state is needed)
-    Add lib/providers/watchlist_provider.dart extending ChangeNotifier.
-    Register it in main.dart inside the MultiProvider list.
-
-Step 4: Add a Screen or Widget
-    Create lib/screens/watchlist_screen.dart or add a button widget to an
-    existing screen. Connect it to your new WatchlistProvider.
-
-Step 5: Add a Route (for a new screen)
-    In lib/main.dart, add to the routes map:
-    '/watchlist': (context) => const WatchlistScreen(),
-
---- HOW TO SWITCH TO A CLOUD DATABASE ---
-
-This is extremely simple because of Prisma:
-
-Step 1: Create a PostgreSQL instance online.
-    Free options: Neon.tech, Supabase, Railway, Render, or your Oracle Cloud VM.
-    They will give you a connection string that looks like:
-    postgresql://user:password@host.cloud.com:5432/ekota?sslmode=require
-
-Step 2: Update the .env file.
-    Open ekota_server/.env and replace the DATABASE_URL value.
-    Do not change anything else.
-
-Step 3: Push the schema.
-    Run: npx prisma db push
-    Prisma will connect to the cloud database and create all the tables there.
-    Your local database is no longer used.
+Step 3: Add Controllers and Routes
+    1. Create ekota_server/src/controllers/watchlistController.js
+    2. Import prisma from '../config/prisma' and write your logic (using req.user.id)
+    3. Create ekota_server/src/routes/watchlistRoutes.js
+    4. Finally, open ekota_server/src/app.js and register your new route:
+       app.use('/api', watchlistRoutes);
 
 --- HOW TO DEPLOY THE BACKEND SERVER ONLINE ---
 
-Currently the backend only runs on your local PC (localhost:3000). To make it
-accessible from anywhere (not just your local WiFi network):
+Step 1: Deploy ekota_server/ to Render.com, Railway.app, or a cloud VM.
+Step 2: Set the DATABASE_URL environment variable on the hosting dashboard.
+Step 3: In clients/ekota_builder/lib/services/api_client.dart, change _baseUrl
+        to your deployed server's URL.
+Step 4: Rebuild the APK: flutter build apk --debug
 
-Step 1: Deploy ekota_server/ to a hosting service.
-    Free/cheap options: Render.com, Railway.app, or your Oracle Cloud VM.
+================================================================================
+SECTION 8:IMPORTANT NOTES FOR THE TEAM
+================================================================================
 
-Step 2: Set the DATABASE_URL environment variable on the hosting platform
-    (using their dashboard, NOT the .env file, since .env should not be deployed).
+1. AVOID MANUALLY WRITING SQL: Now that Prisma is set up, you should exclusively
+   update `schema.prisma` and run `npx prisma db push`. This prevents drift between
+   the app and the database.
 
-Step 3: Update the Flutter app's base URL.
-    In clients/ekota_builder/lib/services/api_client.dart, change:
-    static const _baseUrl = 'http://192.168.0.102:3000/api';
-    to your deployed server's URL:
-    static const _baseUrl = 'https://ekota-api.onrender.com/api';
-
-Step 4: Rebuild the Flutter APK.
-    Run: flutter build apk --debug
-    Distribute the new APK to testers.
-
---- COMBINING EVERYONE'S WORK ---
-
-Git Workflow Recommendation:
-    - Each team member should work on their own Git branch (e.g., feature/login,
-      feature/investor-view, feature/watchlist).
-    - When ready to merge, create a Pull Request into the main branch.
-    - Merge conflicts most likely to occur:
-        * pubspec.yaml (if two people add different packages) -> merge manually
-        * main.dart (if two people add new routes) -> merge manually
-        * prisma/schema.prisma (if two people add new models) -> merge manually,
-          then run "npx prisma db push" again to update the database.
-        * index.ts (if two people add new endpoints) -> merge manually, each
-          person's new app.get/app.post blocks can usually just be appended.
-
-Connecting the Login Feature (Friend's Work) to This Code:
-    Your friend's login screen must do the following on successful login:
-    1. Receive the { token, user } response from POST /api/auth/login
-    2. Call: context.read<AuthProvider>().saveSession(
-         userId: response.user.id,
-         role:   response.user.role,
-         name:   response.user.name,
-         jwt:    response.token,
-       );
-    3. Navigate to the home screen: Navigator.pushReplacementNamed(context, '/home')
-    Once this is done, every other screen (YourItems, Home, Details) will
-    automatically work correctly with the real user data because they all read
-    from AuthProvider and ApiClient handles the JWT automatically.
+2. ARCHITECTURE RULE: Your backend is now modular! Always put your logic in 
+   the `controllers` and `routes` folders. `app.js` should only be used to register
+   top-level routers.
 
 ================================================================================
 END OF DOCUMENTATION

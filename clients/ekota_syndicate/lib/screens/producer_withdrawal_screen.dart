@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/withdrawal_model.dart';
 import '../services/withdrawal_service.dart';
+import '../theme/app_theme.dart';
 
 class ProducerWithdrawalScreen extends StatefulWidget {
   final String authToken;
@@ -16,8 +17,9 @@ class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
   ProducerBalanceModel? _balance;
   List<WithdrawalRequestModel> _requests = [];
   bool _isLoading = false;
+  String? _validationError;
 
-  final ProducerBalanceModel _fallbackBalance = ProducerBalanceModel(
+  final ProducerBalanceModel _defaultBalance = ProducerBalanceModel(
     totalEarnings: 485000.0,
     availableBalance: 342500.0,
     pendingWithdrawal: 142500.0,
@@ -33,10 +35,12 @@ class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
   Future<void> _loadData() async {
     final b = await _service.fetchBalance(widget.authToken);
     final r = await _service.fetchMyRequests(widget.authToken);
-    setState(() {
-      _balance = b ?? _fallbackBalance;
-      if (r.isNotEmpty) _requests = r;
-    });
+    if (mounted) {
+      setState(() {
+        _balance = b ?? _defaultBalance;
+        if (r.isNotEmpty) _requests = r;
+      });
+    }
   }
 
   void _showWithdrawalModal() {
@@ -48,226 +52,183 @@ class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
     final routingController = TextEditingController();
     final mobileNumberController = TextEditingController();
     String selectedMethod = 'BANK_TRANSFER';
+    String? modalError;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Color(0xFF1E293B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      backgroundColor: AppColors.background,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final avail = _balance?.availableBalance ?? 342500;
+
             return Padding(
               padding: EdgeInsets.only(
-                top: 24,
-                left: 20,
-                right: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                top: AppSpacing.xl,
+                left: AppSpacing.lg,
+                right: AppSpacing.lg,
+                bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.xl,
               ),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(color: AppColors.cardBorder, borderRadius: BorderRadius.circular(2)),
+                      ),
+                    ),
+                    SizedBox(height: AppSpacing.md),
+
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Request Payout from Admin',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
+                        Text('Withdraw Funds', style: AppTextStyles.h2),
                         IconButton(
-                          icon: Icon(Icons.close, color: Colors.grey),
+                          icon: Icon(Icons.close, color: AppColors.textMuted),
                           onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
-                    SizedBox(height: 12),
-                    Text('Select Payout Method', style: TextStyle(color: Colors.grey[400], fontSize: 12, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: ['BANK_TRANSFER', 'BKASH', 'NAGAD', 'ROCKET'].map((m) {
-                        final isSelected = selectedMethod == m;
-                        final label = m == 'BANK_TRANSFER' ? 'Bank Transfer' : m;
-                        return ChoiceChip(
-                          label: Text(label),
-                          selected: isSelected,
-                          selectedColor: Colors.amber[700],
-                          onSelected: (val) {
-                            if (val) setModalState(() => selectedMethod = m);
-                          },
-                        );
-                      }).toList(),
-                    ),
-                    SizedBox(height: 16),
 
-                    Text('Withdrawal Amount (BDT)', style: TextStyle(color: Colors.grey[300], fontSize: 12, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 6),
+                    SizedBox(height: AppSpacing.md),
+                    Text('SELECT PAYOUT METHOD', style: AppTextStyles.bodySecondary.copyWith(fontWeight: FontWeight.bold)),
+                    SizedBox(height: AppSpacing.sm),
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: [
+                        _buildChip('BANK_TRANSFER', 'Bank Transfer', selectedMethod, (val) => setModalState(() => selectedMethod = val)),
+                        _buildChip('BKASH', 'bKash Wallet', selectedMethod, (val) => setModalState(() => selectedMethod = val)),
+                        _buildChip('NAGAD', 'Nagad Wallet', selectedMethod, (val) => setModalState(() => selectedMethod = val)),
+                        _buildChip('ROCKET', 'Rocket Wallet', selectedMethod, (val) => setModalState(() => selectedMethod = val)),
+                      ],
+                    ),
+
+                    SizedBox(height: AppSpacing.lg),
+                    Text('REQUESTED AMOUNT', style: AppTextStyles.bodySecondary.copyWith(fontWeight: FontWeight.bold)),
+                    SizedBox(height: AppSpacing.sm),
                     TextField(
                       controller: amountController,
                       keyboardType: TextInputType.number,
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      onChanged: (val) {
+                        final req = double.tryParse(val.trim()) ?? 0;
+                        if (req > avail) {
+                          setModalState(() {
+                            modalError = 'Insufficient balance! Available: ৳${avail.toStringAsFixed(2)}';
+                          });
+                        } else {
+                          setModalState(() => modalError = null);
+                        }
+                      },
+                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                       decoration: InputDecoration(
-                        hintText: 'Enter amount to withdraw',
-                        hintStyle: TextStyle(color: Colors.grey[600]),
+                        hintText: 'Enter amount (e.g. 10000)',
+                        hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
                         prefixText: '৳ ',
-                        prefixStyle: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+                        prefixStyle: TextStyle(color: AppColors.warning, fontSize: 18, fontWeight: FontWeight.bold),
                         filled: true,
-                        fillColor: Colors.black26,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        fillColor: AppColors.cardBackground,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                       ),
                     ),
                     SizedBox(height: 4),
-                    Text(
-                      'Available for payout: ৳${(_balance?.availableBalance ?? 342500).toStringAsFixed(2)} BDT',
-                      style: TextStyle(color: Colors.greenAccent, fontSize: 11),
-                    ),
+                    Text('Available for payout: ৳${avail.toStringAsFixed(2)} BDT', style: TextStyle(color: AppColors.success, fontSize: 11)),
 
-                    SizedBox(height: 14),
+                    if (modalError != null) ...[
+                      SizedBox(height: 6),
+                      Text(modalError!, style: TextStyle(color: AppColors.error, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+
+                    SizedBox(height: AppSpacing.lg),
+                    Text('ACCOUNT DETAILS', style: AppTextStyles.bodySecondary.copyWith(fontWeight: FontWeight.bold)),
+                    SizedBox(height: AppSpacing.sm),
+
                     if (selectedMethod == 'BANK_TRANSFER') ...[
-                      TextField(
-                        controller: bankNameController,
-                        style: TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          labelText: 'Bank Name (e.g. Dutch-Bangla Bank, Brac Bank)',
-                          labelStyle: TextStyle(color: Colors.grey[400]),
-                          filled: true,
-                          fillColor: Colors.black26,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                      SizedBox(height: 10),
-                      TextField(
-                        controller: accountHolderController,
-                        style: TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          labelText: 'Account Holder Name',
-                          labelStyle: TextStyle(color: Colors.grey[400]),
-                          filled: true,
-                          fillColor: Colors.black26,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                      SizedBox(height: 10),
-                      TextField(
-                        controller: accountNumberController,
-                        style: TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          labelText: 'Account Number',
-                          labelStyle: TextStyle(color: Colors.grey[400]),
-                          filled: true,
-                          fillColor: Colors.black26,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                      SizedBox(height: 10),
+                      _buildInput(bankNameController, 'Bank Name (e.g. Brac Bank, Dutch-Bangla)'),
+                      SizedBox(height: AppSpacing.sm),
+                      _buildInput(accountHolderController, 'Account Holder Name'),
+                      SizedBox(height: AppSpacing.sm),
+                      _buildInput(accountNumberController, 'Account Number'),
+                      SizedBox(height: AppSpacing.sm),
                       Row(
                         children: [
-                          Expanded(
-                            child: TextField(
-                              controller: branchController,
-                              style: TextStyle(color: Colors.white),
-                              decoration: InputDecoration(
-                                labelText: 'Branch Name',
-                                labelStyle: TextStyle(color: Colors.grey[400]),
-                                filled: true,
-                                fillColor: Colors.black26,
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: routingController,
-                              style: TextStyle(color: Colors.white),
-                              decoration: InputDecoration(
-                                labelText: 'Routing Number',
-                                labelStyle: TextStyle(color: Colors.grey[400]),
-                                filled: true,
-                                fillColor: Colors.black26,
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
-                          ),
+                          Expanded(child: _buildInput(branchController, 'Branch Name')),
+                          SizedBox(width: AppSpacing.sm),
+                          Expanded(child: _buildInput(routingController, 'Routing No.')),
                         ],
                       ),
                     ] else ...[
-                      TextField(
-                        controller: mobileNumberController,
-                        keyboardType: TextInputType.phone,
-                        style: TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          labelText: '$selectedMethod Mobile Wallet Number',
-                          labelStyle: TextStyle(color: Colors.grey[400]),
-                          prefixIcon: Icon(Icons.phone_android, color: Colors.amber),
-                          filled: true,
-                          fillColor: Colors.black26,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
+                      _buildInput(mobileNumberController, '$selectedMethod Mobile Wallet Number', icon: Icons.phone_android),
                     ],
 
-                    SizedBox(height: 22),
+                    SizedBox(height: AppSpacing.xl),
+
                     SizedBox(
                       width: double.infinity,
-                      height: 50,
+                      height: 48,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.amber[600],
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          backgroundColor: modalError != null ? AppColors.textMuted : AppColors.primaryAccent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        onPressed: () async {
-                          final amount = double.tryParse(amountController.text.trim());
-                          if (amount == null || amount <= 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Please enter a valid withdrawal amount')),
-                            );
-                            return;
-                          }
+                        onPressed: modalError != null
+                            ? null
+                            : () async {
+                                final amount = double.tryParse(amountController.text.trim());
+                                if (amount == null || amount <= 0) {
+                                  setModalState(() => modalError = 'Please enter a valid positive amount.');
+                                  return;
+                                }
 
-                          Map<String, dynamic> accountDetails = {};
-                          if (selectedMethod == 'BANK_TRANSFER') {
-                            accountDetails = {
-                              'bankName': bankNameController.text.trim(),
-                              'accountName': accountHolderController.text.trim(),
-                              'accountNumber': accountNumberController.text.trim(),
-                              'branchName': branchController.text.trim(),
-                              'routingNumber': routingController.text.trim(),
-                            };
-                          } else {
-                            accountDetails = {
-                              'mobileNumber': mobileNumberController.text.trim(),
-                            };
-                          }
+                                if (amount > avail) {
+                                  setModalState(() => modalError = 'Insufficient available balance!');
+                                  return;
+                                }
 
-                          Navigator.pop(context);
-                          setState(() => _isLoading = true);
+                                Map<String, dynamic> accountDetails = {};
+                                if (selectedMethod == 'BANK_TRANSFER') {
+                                  accountDetails = {
+                                    'bankName': bankNameController.text.trim(),
+                                    'accountName': accountHolderController.text.trim(),
+                                    'accountNumber': accountNumberController.text.trim(),
+                                    'branchName': branchController.text.trim(),
+                                    'routingNumber': routingController.text.trim(),
+                                  };
+                                } else {
+                                  accountDetails = {
+                                    'mobileNumber': mobileNumberController.text.trim(),
+                                  };
+                                }
 
-                          final result = await _service.submitWithdrawal(
-                            amount: amount,
-                            method: selectedMethod,
-                            accountDetails: accountDetails,
-                            token: widget.authToken,
-                          );
+                                Navigator.pop(context);
+                                setState(() => _isLoading = true);
 
-                          setState(() => _isLoading = false);
+                                final result = await _service.submitWithdrawal(
+                                  amount: amount,
+                                  method: selectedMethod,
+                                  accountDetails: accountDetails,
+                                  token: widget.authToken,
+                                );
 
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(result['message'] ?? 'Done'),
-                              backgroundColor: result['success'] == true ? Colors.green : Colors.redAccent,
-                            ),
-                          );
+                                setState(() => _isLoading = false);
 
-                          _loadData();
-                        },
-                        child: Text(
-                          'Submit Request to Admin',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black),
-                        ),
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(result['message'] ?? 'Done'),
+                                    backgroundColor: result['success'] == true ? AppColors.success : AppColors.error,
+                                  ),
+                                );
+
+                                _loadData();
+                              },
+                        child: Text('Submit Withdrawal Request', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
                       ),
                     ),
                   ],
@@ -280,64 +241,102 @@ class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
     );
   }
 
+  Widget _buildChip(String code, String label, String selected, Function(String) onSelect) {
+    final isSelected = selected == code;
+    return ChoiceChip(
+      label: Text(label, style: TextStyle(color: isSelected ? Colors.white : AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.bold)),
+      selected: isSelected,
+      selectedColor: AppColors.primaryAccent,
+      onSelected: (val) {
+        if (val) onSelect(code);
+      },
+    );
+  }
+
+  Widget _buildInput(TextEditingController ctrl, String hint, {IconData? icon}) {
+    return TextField(
+      controller: ctrl,
+      style: TextStyle(color: Colors.white, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: hint,
+        labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+        prefixIcon: icon != null ? Icon(icon, color: AppColors.primaryAccent, size: 18) : null,
+        filled: true,
+        fillColor: AppColors.cardBackground,
+        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bal = _balance ?? _fallbackBalance;
+    final bal = _balance ?? _defaultBalance;
 
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: SingleChildScrollView(
-        physics: AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Producer Balance Card
-            Card(
-              elevation: 6,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              color: Color(0xFF1E293B),
-              child: Padding(
-                padding: EdgeInsets.all(20),
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.cardBackground,
+        elevation: 0,
+        title: Text('Producer Wallet', style: AppTextStyles.h2),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh, color: AppColors.primaryAccent),
+            onPressed: _loadData,
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _loadData,
+        color: AppColors.primaryAccent,
+        child: SingleChildScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Available Balance Dashboard Card
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(AppSpacing.lg),
+                decoration: BoxDecoration(
+                  color: AppColors.cardBackground,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.cardBorder),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Available Balance', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
-                        Icon(Icons.account_balance_wallet, color: Colors.amberAccent),
+                        Text('AVAILABLE FOR PAYOUT', style: AppTextStyles.bodySecondary.copyWith(fontWeight: FontWeight.bold)),
+                        Icon(Icons.account_balance_wallet_outlined, color: AppColors.warning, size: 20),
                       ],
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      '৳${bal.availableBalance.toStringAsFixed(2)} BDT',
-                      style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: Colors.amberAccent),
-                    ),
-                    SizedBox(height: 16),
-                    Divider(color: Colors.white12),
-                    SizedBox(height: 12),
+                    SizedBox(height: 6),
+                    Text('৳${bal.availableBalance.toStringAsFixed(2)} BDT', style: AppTextStyles.amountLarge.copyWith(color: AppColors.warning)),
+                    SizedBox(height: AppSpacing.md),
+                    Divider(color: AppColors.cardBorder, height: 1),
+                    SizedBox(height: AppSpacing.md),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _buildStatItem('Total Earnings', '৳${bal.totalEarnings.toStringAsFixed(0)}'),
-                        _buildStatItem('Pending Payout', '৳${bal.pendingWithdrawal.toStringAsFixed(0)}'),
-                        _buildStatItem('Total Withdrawn', '৳${bal.totalWithdrawn.toStringAsFixed(0)}'),
+                        _buildStat('Total Earnings', '৳${bal.totalEarnings.toStringAsFixed(0)}'),
+                        _buildStat('Pending', '৳${bal.pendingWithdrawal.toStringAsFixed(0)}'),
+                        _buildStat('Withdrawn', '৳${bal.totalWithdrawn.toStringAsFixed(0)}'),
                       ],
                     ),
-                    SizedBox(height: 20),
+                    SizedBox(height: AppSpacing.lg),
                     SizedBox(
                       width: double.infinity,
-                      height: 48,
+                      height: 46,
                       child: ElevatedButton.icon(
-                        icon: Icon(Icons.arrow_circle_up_outlined, color: Colors.black),
-                        label: Text(
-                          'Request Payout to Admin',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black),
-                        ),
+                        icon: Icon(Icons.arrow_upward, color: Colors.white, size: 18),
+                        label: Text('Request Payout', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white)),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.greenAccent,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          backgroundColor: AppColors.primaryAccent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         onPressed: _showWithdrawalModal,
                       ),
@@ -345,128 +344,111 @@ class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
                   ],
                 ),
               ),
-            ),
 
-            SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Withdrawal Requests History',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                IconButton(
-                  icon: Icon(Icons.refresh, color: Colors.greenAccent),
-                  onPressed: _loadData,
-                ),
-              ],
-            ),
-            SizedBox(height: 12),
+              SizedBox(height: AppSpacing.xxl),
 
-            // Requests List
-            ListView.builder(
-              shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
-              itemCount: _requests.length,
-              itemBuilder: (context, index) {
-                final req = _requests[index];
-                final isPending = req.status == 'PENDING';
-                final isApproved = req.status == 'APPROVED' || req.status == 'PROCESSED';
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Withdrawal History', style: AppTextStyles.h2),
+                  IconButton(
+                    icon: Icon(Icons.refresh, color: AppColors.primaryAccent, size: 20),
+                    onPressed: _loadData,
+                  ),
+                ],
+              ),
+              SizedBox(height: AppSpacing.sm),
 
-                return Card(
-                  margin: EdgeInsets.only(bottom: 12),
-                  color: Color(0xFF1E293B),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // Withdrawal Requests List
+              if (_requests.isEmpty)
+                Container(
+                  padding: EdgeInsets.all(AppSpacing.xxl),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    children: const [
+                      Icon(Icons.history_outlined, color: AppColors.textMuted, size: 40),
+                      SizedBox(height: 8),
+                      Text('No withdrawal requests yet', style: AppTextStyles.h3),
+                      Text('Your submitted requests will appear here.', style: AppTextStyles.bodySecondary),
+                    ],
+                  ),
+                )
+              else
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemCount: _requests.length,
+                  itemBuilder: (context, index) {
+                    final req = _requests[index];
+                    final isApproved = req.status == 'APPROVED' || req.status == 'PROCESSED';
+                    final isPending = req.status == 'PENDING';
+
+                    final statusColor = isApproved ? AppColors.success : (isPending ? AppColors.warning : AppColors.error);
+                    final statusBg = isApproved ? AppColors.successBg : (isPending ? AppColors.warningBg : AppColors.errorBg);
+
+                    return Card(
+                      margin: EdgeInsets.only(bottom: AppSpacing.md),
+                      color: AppColors.cardBackground,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: AppColors.cardBorder)),
+                      child: Padding(
+                        padding: EdgeInsets.all(AppSpacing.lg),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '৳${req.amount.toStringAsFixed(2)} BDT',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.amberAccent),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('৳${req.amount.toStringAsFixed(2)} BDT', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: statusBg,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: statusColor),
+                                  ),
+                                  child: Text(req.status, style: AppTextStyles.badgeText.copyWith(color: statusColor)),
+                                ),
+                              ],
                             ),
-                            Container(
-                              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: isApproved
-                                    ? Colors.green.withOpacity(0.15)
-                                    : isPending
-                                        ? Colors.amber.withOpacity(0.15)
-                                        : Colors.red.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: isApproved
-                                      ? Colors.greenAccent
-                                      : isPending
-                                          ? Colors.amberAccent
-                                          : Colors.redAccent,
-                                ),
-                              ),
-                              child: Text(
-                                req.status,
-                                style: TextStyle(
-                                  color: isApproved
-                                      ? Colors.greenAccent
-                                      : isPending
-                                          ? Colors.amberAccent
-                                          : Colors.redAccent,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 11,
-                                ),
-                              ),
+                            SizedBox(height: 4),
+                            Text('Method: ${req.method}', style: AppTextStyles.bodySecondary),
+                            if (req.transactionRef != null) ...[
+                              SizedBox(height: 2),
+                              Text('Ref ID: ${req.transactionRef}', style: TextStyle(color: AppColors.primaryAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                            if (req.adminNote != null) ...[
+                              SizedBox(height: 2),
+                              Text('Admin Note: ${req.adminNote}', style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontStyle: FontStyle.italic)),
+                            ],
+                            SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Text(req.createdAt.split('T')[0], style: AppTextStyles.bodySecondary),
                             ),
                           ],
                         ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Method: ${req.method}',
-                          style: TextStyle(color: Colors.grey[300], fontSize: 13),
-                        ),
-                        if (req.transactionRef != null) ...[
-                          SizedBox(height: 4),
-                          Text(
-                            'Ref / Proof ID: ${req.transactionRef}',
-                            style: TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                        if (req.adminNote != null) ...[
-                          SizedBox(height: 4),
-                          Text(
-                            'Admin Note: ${req.adminNote}',
-                            style: TextStyle(color: Colors.grey[400], fontSize: 12, fontStyle: FontStyle.italic),
-                          ),
-                        ],
-                        SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            req.createdAt.split('T')[0],
-                            style: TextStyle(color: Colors.grey[500], fontSize: 11),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildStatItem(String label, String value) {
+  Widget _buildStat(String label, String val) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(color: Colors.grey[400], fontSize: 11)),
+        Text(label, style: AppTextStyles.bodySecondary),
         SizedBox(height: 2),
-        Text(value, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+        Text(val, style: AppTextStyles.body.copyWith(fontWeight: FontWeight.bold)),
       ],
     );
   }

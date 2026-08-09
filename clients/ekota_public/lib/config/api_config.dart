@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 class ApiConfig {
-  // Change this IP to your laptop's local Wi-Fi IP (e.g. 192.168.1.50) when running APK on physical phone!
-  static String hostIp = '10.0.2.2'; // Default Android emulator host IP
+  // Your laptop's Wi-Fi IP for direct connection from physical phone
+  static String hostIp = '192.168.1.195'; 
   static int port = 5000;
 
   static String get baseUrl {

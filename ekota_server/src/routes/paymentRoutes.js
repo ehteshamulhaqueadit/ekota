@@ -15,7 +15,11 @@ router.post('/ipn', paymentController.handleIPN);
 // Protected routes
 router.use(authenticate);
 
+// Endpoint aliases for payment creation
+router.post('/create', paymentController.initiatePayment);
 router.post('/initiate', paymentController.initiatePayment);
+
+// Payment history & admin audit
 router.get('/my-payments', paymentController.getUserPayments);
 router.get('/admin/all', paymentController.getAllPayments);
 router.get('/:id', paymentController.getPaymentById);

@@ -36,6 +36,7 @@ let liveRequests = [
     accountDetails: { mobileNumber: '01899-887766' },
     status: 'APPROVED',
     transactionRef: 'NGD-TXN-88112',
+    processedAt: new Date(Date.now() - 3600000 * 20).toISOString(),
     createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
   },
   {
@@ -54,6 +55,7 @@ let liveRequests = [
     accountDetails: { bankName: 'Brac Bank', accountNumber: '1501209988001', branchName: 'Gulshan Branch' },
     status: 'REJECTED',
     adminNote: 'Incomplete bank branch routing details.',
+    processedAt: new Date(Date.now() - 3600000 * 40).toISOString(),
     createdAt: new Date(Date.now() - 3600000 * 48).toISOString(),
   },
   {
@@ -89,6 +91,7 @@ let liveRequests = [
     accountDetails: { mobileNumber: '01755-992211' },
     status: 'PROCESSED',
     transactionRef: 'BKS-99228811',
+    processedAt: new Date(Date.now() - 3600000 * 70).toISOString(),
     createdAt: new Date(Date.now() - 3600000 * 72).toISOString(),
   },
 ];
@@ -123,12 +126,13 @@ async function getProducerBalance(req, res, next) {
 }
 
 /**
- * Request Withdrawal
+ * Request Withdrawal (POST /api/withdrawals or POST /api/withdrawals/request)
  */
 async function requestWithdrawal(req, res, next) {
   try {
-    const { amount, method = 'BKASH', accountDetails } = req.body;
+    const { amount, paymentMethod, method, accountDetails, accountNumber, note } = req.body;
     const reqAmount = Number(amount);
+    const chosenMethod = (paymentMethod || method || 'BKASH').toUpperCase();
 
     if (!reqAmount || reqAmount <= 0) {
       return res.status(400).json({ message: 'Valid positive amount is required' });
@@ -142,11 +146,13 @@ async function requestWithdrawal(req, res, next) {
     liveProducerBalance.availableBalance -= reqAmount;
     liveProducerBalance.pendingWithdrawal += reqAmount;
 
+    const producerId = req.user.id || 'prod-01';
+
     const newReq = {
       id: `WD-${Math.floor(1000 + Math.random() * 9000)}`,
-      producerId: req.user.id || 'prod-01',
+      producerId,
       producer: {
-        id: req.user.id || 'prod-01',
+        id: producerId,
         fullName: req.user.fullName || 'Nilufar Rashidova',
         email: req.user.email || 'nilufar@ekota.com.bd',
         phoneNumber: req.user.phoneNumber || '01711-223344',
@@ -154,8 +160,10 @@ async function requestWithdrawal(req, res, next) {
         avatarInitials: 'NR',
       },
       amount: reqAmount,
-      method: method.toUpperCase(),
-      accountDetails: accountDetails || { mobileNumber: '01711-223344' },
+      method: chosenMethod,
+      paymentMethod: chosenMethod,
+      accountDetails: accountDetails || { accountNumber: accountNumber || '01711-223344' },
+      note: note || '',
       status: 'PENDING',
       createdAt: new Date().toISOString(),
     };
@@ -166,16 +174,17 @@ async function requestWithdrawal(req, res, next) {
     try {
       await prisma.withdrawalRequest.create({
         data: {
-          producerId: req.user.id,
+          producerId,
           amount: reqAmount,
-          method: method.toUpperCase(),
-          accountDetails: accountDetails || {},
+          method: chosenMethod,
+          accountDetails: accountDetails || { accountNumber },
           status: 'PENDING',
         },
       });
     } catch (_e) {}
 
     return res.status(201).json({
+      success: true,
       message: 'Withdrawal request submitted successfully',
       withdrawalRequest: newReq,
       balance: liveProducerBalance,
@@ -186,7 +195,7 @@ async function requestWithdrawal(req, res, next) {
 }
 
 /**
- * Get My Requests
+ * Get My Requests (GET /api/withdrawals/my or GET /api/withdrawals/my-requests)
  */
 async function getMyWithdrawalRequests(req, res, next) {
   try {
@@ -196,18 +205,18 @@ async function getMyWithdrawalRequests(req, res, next) {
         orderBy: { createdAt: 'desc' },
       });
       if (requests && requests.length > 0) {
-        return res.json({ requests });
+        return res.json({ success: true, requests });
       }
     } catch (_e) {}
 
-    return res.json({ requests: liveRequests });
+    return res.json({ success: true, requests: liveRequests });
   } catch (error) {
     return next(error);
   }
 }
 
 /**
- * Admin: Get All Withdrawal Requests
+ * Admin: Get All Withdrawal Requests (GET /api/withdrawals or GET /api/withdrawals/admin/all)
  */
 async function getAllWithdrawalRequests(req, res, next) {
   try {
@@ -221,7 +230,7 @@ async function getAllWithdrawalRequests(req, res, next) {
         orderBy: { createdAt: 'desc' },
       });
       if (requests && requests.length > 0) {
-        return res.json({ requests });
+        return res.json({ success: true, requests });
       }
     } catch (_e) {}
 
@@ -230,58 +239,144 @@ async function getAllWithdrawalRequests(req, res, next) {
       filtered = liveRequests.filter(r => r.status.toUpperCase() === status.toUpperCase());
     }
 
-    return res.json({ requests: filtered });
+    return res.json({ success: true, requests: filtered });
   } catch (error) {
     return next(error);
   }
 }
 
 /**
- * Admin: Process Withdrawal Request
+ * Admin: Approve Withdrawal Request (PATCH /api/withdrawals/:id/approve)
  */
-async function processWithdrawalRequest(req, res, next) {
+async function approveWithdrawal(req, res, next) {
   try {
     const { id } = req.params;
-    const { status, adminNote, transactionRef } = req.body;
-
-    const targetStatus = status ? status.toUpperCase() : 'APPROVED';
-
     const reqIndex = liveRequests.findIndex(r => r.id === id || r.id.includes(id));
-    if (reqIndex !== -1) {
-      const existing = liveRequests[reqIndex];
-      existing.status = targetStatus;
-      if (adminNote) existing.adminNote = adminNote;
-      if (transactionRef) existing.transactionRef = transactionRef;
-      else if (targetStatus !== 'REJECTED') existing.transactionRef = `TXN-EKT-${Math.floor(100000 + Math.random() * 900000)}`;
 
-      const amt = Number(existing.amount);
+    if (reqIndex === -1) {
+      return res.status(404).json({ success: false, message: 'Withdrawal request not found' });
+    }
 
-      if (targetStatus === 'APPROVED' || targetStatus === 'PROCESSED') {
-        liveProducerBalance.pendingWithdrawal = Math.max(0, liveProducerBalance.pendingWithdrawal - amt);
-        liveProducerBalance.totalWithdrawn += amt;
-      } else if (targetStatus === 'REJECTED') {
-        liveProducerBalance.pendingWithdrawal = Math.max(0, liveProducerBalance.pendingWithdrawal - amt);
-        liveProducerBalance.availableBalance += amt;
-      }
+    const existing = liveRequests[reqIndex];
 
-      sendNotificationEmail({
-        to: existing.producer?.email || 'producer@ekota.com.bd',
-        subject: `Ekota Payout Update - Withdrawal Request ${targetStatus}`,
-        title: `Withdrawal Request ${targetStatus}`,
-        message: `Your withdrawal request of ৳${amt} has been ${targetStatus.toLowerCase()}. ${transactionRef ? `Ref: ${transactionRef}` : ''}`,
-      });
-
-      return res.json({
-        message: `Withdrawal request successfully ${targetStatus.toLowerCase()}`,
-        request: existing,
-        balance: liveProducerBalance,
+    // Enforce Double Processing Prevention
+    if (existing.status !== 'PENDING') {
+      return res.status(409).json({
+        success: false,
+        message: `Withdrawal request has already been processed with status: ${existing.status}`,
       });
     }
 
-    return res.status(404).json({ message: 'Request not found' });
+    existing.status = 'APPROVED';
+    existing.processedAt = new Date().toISOString();
+    existing.processedBy = req.user.id;
+    existing.transactionRef = `TXN-EKT-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const amt = Number(existing.amount);
+    liveProducerBalance.pendingWithdrawal = Math.max(0, liveProducerBalance.pendingWithdrawal - amt);
+    liveProducerBalance.totalWithdrawn += amt;
+
+    // Create Notification record
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: existing.producerId,
+          title: 'Withdrawal Approved',
+          message: `Your withdrawal request of ৳${amt.toLocaleString()} has been approved.`,
+          type: 'WITHDRAWAL_APPROVED',
+        },
+      });
+    } catch (_e) {}
+
+    sendNotificationEmail({
+      to: existing.producer?.email || 'producer@ekota.com.bd',
+      subject: `Ekota Payout Update - Withdrawal Request Approved`,
+      title: `Withdrawal Request Approved`,
+      message: `Your withdrawal request of ৳${amt.toLocaleString()} has been approved. Transaction Ref: ${existing.transactionRef}`,
+    });
+
+    return res.json({
+      success: true,
+      message: `Withdrawal request of ৳${amt} approved successfully`,
+      withdrawal: existing,
+      balance: liveProducerBalance,
+    });
   } catch (error) {
     return next(error);
   }
+}
+
+/**
+ * Admin: Reject Withdrawal Request (PATCH /api/withdrawals/:id/reject)
+ */
+async function rejectWithdrawal(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { adminNote } = req.body;
+
+    const reqIndex = liveRequests.findIndex(r => r.id === id || r.id.includes(id));
+    if (reqIndex === -1) {
+      return res.status(404).json({ success: false, message: 'Withdrawal request not found' });
+    }
+
+    const existing = liveRequests[reqIndex];
+
+    // Enforce Double Processing Prevention
+    if (existing.status !== 'PENDING') {
+      return res.status(409).json({
+        success: false,
+        message: `Withdrawal request has already been processed with status: ${existing.status}`,
+      });
+    }
+
+    existing.status = 'REJECTED';
+    existing.adminNote = adminNote || 'Rejected by administrator';
+    existing.processedAt = new Date().toISOString();
+    existing.processedBy = req.user.id;
+
+    const amt = Number(existing.amount);
+    liveProducerBalance.pendingWithdrawal = Math.max(0, liveProducerBalance.pendingWithdrawal - amt);
+    liveProducerBalance.availableBalance += amt;
+
+    // Create Notification record
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: existing.producerId,
+          title: 'Withdrawal Rejected',
+          message: `Your withdrawal request of ৳${amt.toLocaleString()} has been rejected. Note: ${existing.adminNote}`,
+          type: 'WITHDRAWAL_REJECTED',
+        },
+      });
+    } catch (_e) {}
+
+    sendNotificationEmail({
+      to: existing.producer?.email || 'producer@ekota.com.bd',
+      subject: `Ekota Payout Update - Withdrawal Request Rejected`,
+      title: `Withdrawal Request Rejected`,
+      message: `Your withdrawal request of ৳${amt.toLocaleString()} has been rejected. Reason: ${existing.adminNote}`,
+    });
+
+    return res.json({
+      success: true,
+      message: `Withdrawal request of ৳${amt} rejected successfully`,
+      withdrawal: existing,
+      balance: liveProducerBalance,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * Admin: Process Withdrawal Request (Generic route handler)
+ */
+async function processWithdrawalRequest(req, res, next) {
+  const { status } = req.body;
+  if (status && status.toUpperCase() === 'REJECTED') {
+    return rejectWithdrawal(req, res, next);
+  }
+  return approveWithdrawal(req, res, next);
 }
 
 module.exports = {
@@ -289,5 +384,7 @@ module.exports = {
   requestWithdrawal,
   getMyWithdrawalRequests,
   getAllWithdrawalRequests,
+  approveWithdrawal,
+  rejectWithdrawal,
   processWithdrawalRequest,
 };

@@ -1,16 +1,56 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'screens/login_screen.dart';
 
-void main() => runApp(EkotaPublicApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: '.env');
+  runApp(const EkotaPublicApp());
+}
 
-class EkotaPublicApp extends StatelessWidget {
+class EkotaPublicApp extends StatefulWidget {
+  const EkotaPublicApp({super.key});
+
+  @override
+  State<EkotaPublicApp> createState() => _EkotaPublicAppState();
+}
+
+class _EkotaPublicAppState extends State<EkotaPublicApp> {
+  bool _isLoading = true;
+  bool _isLoggedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkSession();
+    });
+  }
+
+  Future<void> _checkSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Ekota Public',
-      home: Scaffold(
-        appBar: AppBar(title: Text('Ekota Public')),
-        body: Center(child: Text('Ekota Public mobile app')),
-      ),
+      home: _isLoading
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : _isLoggedIn
+              ? const PublicHomeScreen()
+              : const LoginScreen(),
     );
   }
 }

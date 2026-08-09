@@ -6,16 +6,15 @@ CREATE DATABASE ekota_db;
 -- Step 2: Connect to the newly created database
 \c ekota_db
 
-
+-- Required for uuid_generate_v4()
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'RENTER', 'INVESTOR', 'PRODUCER');
 CREATE TYPE "KycStatus" AS ENUM ('UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED');
 CREATE TYPE "CampaignStatus" AS ENUM ('DRAFT', 'FUNDING', 'FULLY_FUNDED', 'IN_PRODUCTION', 'DELIVERED');
 
-
 -- Core User Accounts
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -23,23 +22,25 @@ CREATE TABLE users (
     phone_number VARCHAR(20),
     role "UserRole" NOT NULL,
     is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
-    is_blocked BOOLEAN DEFAULT FALSE,
+    is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
     blocked_reason TEXT,
-    kyc_status "KycStatus" DEFAULT 'UNVERIFIED',
+    kyc_status "KycStatus" NOT NULL DEFAULT 'UNVERIFIED',
     didit_session_id VARCHAR(255),
-    
+    created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
--- 5. OTP Verifications Table (Auth Verification)
-CREATE TABLE IF NOT EXISTS "otp_verifications" (
+-- OTP store for registration and password reset
+CREATE TABLE IF NOT EXISTS otp_verifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) NOT NULL,
     otp_code VARCHAR(10) NOT NULL,
     expires_at TIMESTAMPTZ(6) NOT NULL,
-    is_used BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP
+    is_used BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. Listing Table (Producer Assets & Crowdfunding Campaigns)
+-- Listings created by producers
 CREATE TABLE IF NOT EXISTS "Listing" (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     "assetName" TEXT NOT NULL,
@@ -48,72 +49,55 @@ CREATE TABLE IF NOT EXISTS "Listing" (
     "rentalPrice" DOUBLE PRECISION NOT NULL,
     description TEXT NOT NULL,
     specifications TEXT,
-    "imageUrls" TEXT[] DEFAULT ARRAY[]::TEXT[],
-    "videoUrls" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "imageUrls" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "videoUrls" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     "productionTimeType" TEXT NOT NULL,
     "productionDays" INTEGER,
-    status TEXT DEFAULT 'active',
-    "campaignStatus" TEXT DEFAULT 'funding',
-    upvotes INTEGER DEFAULT 0,
-    downvotes INTEGER DEFAULT 0,
-    "producerId" UUID NOT NULL REFERENCES "users"(id) ON DELETE CASCADE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    status TEXT NOT NULL DEFAULT 'active',
+    "campaignStatus" TEXT NOT NULL DEFAULT 'funding',
+    upvotes INTEGER NOT NULL DEFAULT 0,
+    downvotes INTEGER NOT NULL DEFAULT 0,
+    "producerId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 7. Comments Table (Asset Q&A and Producer Replies)
+-- Comments on listings, including optional producer replies
 CREATE TABLE IF NOT EXISTS "Comment" (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     text TEXT NOT NULL,
     "listingId" UUID NOT NULL REFERENCES "Listing"(id) ON DELETE CASCADE,
-    "authorId" UUID NOT NULL REFERENCES "users"(id) ON DELETE CASCADE,
+    "authorId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     reply TEXT,
-    "createdAt" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 8. Reviews Table (Investor & Renter Asset Ratings)
+-- Reviews left by investors/renters
 CREATE TABLE IF NOT EXISTS "Review" (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     rating INTEGER NOT NULL,
     text TEXT NOT NULL,
     "listingId" UUID NOT NULL REFERENCES "Listing"(id) ON DELETE CASCADE,
-    "authorId" UUID NOT NULL REFERENCES "users"(id) ON DELETE CASCADE,
-    "createdAt" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    "authorId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 9. Grant Permissions to Backend User
-GRANT ALL PRIVILEGES ON DATABASE ekota_db TO ekota_backend;
-GRANT ALL ON SCHEMA public TO ekota_backend;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ekota_backend;
+-- Helpful indexes for the current app flows
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_otp_verifications_email ON otp_verifications(email);
+CREATE INDEX IF NOT EXISTS idx_listing_producer_id ON "Listing"("producerId");
+CREATE INDEX IF NOT EXISTS idx_comment_listing_id ON "Comment"("listingId");
+CREATE INDEX IF NOT EXISTS idx_review_listing_id ON "Review"("listingId");
 
--- ==============================================================================
--- NOTE: If you are using Prisma (recommended), simply run:
---   cd ekota_server
---   npx prisma db push
--- Prisma will automatically build all of the above tables and relations!
--- ==============================================================================
-
-
-ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS is_email_verified BOOLEAN NOT NULL DEFAULT FALSE;
-
-
--- OTP Store for Registration & Password Reset
-CREATE TABLE otp_verifications (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email VARCHAR(255) NOT NULL,
-    otp_code VARCHAR(10) NOT NULL,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    is_used BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-
+-- Dev-only backend account
 CREATE USER ekota_backend WITH PASSWORD 'ekota1234';
 
 GRANT CONNECT ON DATABASE ekota_db TO ekota_backend;
 GRANT USAGE ON SCHEMA public TO ekota_backend;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ekota_backend;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ekota_backend;
 
--- Now User ekota_backend has permission to access only ekota_db 
-
--- use this username and password for devloping only
+-- If you are using Prisma, the preferred path is:
+--   cd ekota_server
+--   npx prisma db push
+-- Prisma will create or update the same tables defined in prisma/schema.prisma.

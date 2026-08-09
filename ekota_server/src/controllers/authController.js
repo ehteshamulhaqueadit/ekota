@@ -42,6 +42,7 @@ function sanitizeUser(user) {
 }
 
 async function signup(req, res, next) {
+  
   try {
     const { email, password, fullName, phoneNumber, role } = req.body;
 
@@ -99,6 +100,23 @@ async function signup(req, res, next) {
 }
 
 async function login(req, res, next) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   try {
     const { email, password } = req.body;
 

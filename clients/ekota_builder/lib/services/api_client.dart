@@ -1,11 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/app_config.dart';
 
 class ApiClient {
-  // Change this to your actual backend URL when the server is ready.
-  // For Android Physical Device: http://192.168.0.102:3000/api
-  static const _baseUrl = 'http://192.168.0.102:3000/api';
+  static String get _baseUrl => AppConfig.apiBaseUrl;
 
   Future<Map<String, String>> _headers() async {
     final prefs = await SharedPreferences.getInstance();

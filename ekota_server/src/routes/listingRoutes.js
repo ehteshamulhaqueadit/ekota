@@ -2,6 +2,7 @@ const express = require('express');
 
 const { authenticate } = require('../middleware/auth');
 const {
+  getProducerStats,
   getProducerListings,
   createListing,
   getListingById,
@@ -16,6 +17,7 @@ const {
 
 const router = express.Router();
 
+router.get('/producers/:producerId/stats', authenticate, getProducerStats);
 router.get('/producers/:producerId/listings', authenticate, getProducerListings);
 router.get('/producers/listings', authenticate, getProducerListings);
 

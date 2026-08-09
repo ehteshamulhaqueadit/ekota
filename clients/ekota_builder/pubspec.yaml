@@ -12,6 +12,7 @@ dependencies:
 
   # networking & storage
   http: ^1.2.0
+  flutter_dotenv: ^5.1.2
   # state management
   provider: ^6.1.2
 
@@ -30,6 +31,8 @@ dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env
 
 dev_dependencies:
   flutter_test:

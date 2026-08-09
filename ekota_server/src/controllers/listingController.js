@@ -1,7 +1,73 @@
 const prisma = require('../config/prisma');
 
+async function getProducerStats(req, res) {
+  const producerId = req.params.producerId || req.user.id;
+
+  try {
+    const listings = await prisma.listing.findMany({
+      where: { producerId },
+      select: {
+        campaignStatus: true,
+        reviews: {
+          select: {
+            rating: true,
+            authorId: true,
+            author: {
+              select: {
+                role: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const completedListings = listings.filter(
+      (listing) => String(listing.campaignStatus).toUpperCase() === 'DELIVERED'
+    );
+    const activeListings = listings.filter(
+      (listing) => String(listing.campaignStatus).toUpperCase() !== 'DELIVERED'
+    );
+
+    const reviews = listings.flatMap((listing) => listing.reviews);
+    const investorIds = new Set(
+      reviews
+        .filter((review) => review.author.role === 'INVESTOR')
+        .map((review) => review.authorId)
+    );
+    const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);
+
+    res.json({
+      gigsCompleted: completedListings.length,
+      gigsCurrentlyListed: activeListings.length,
+      investors: investorIds.size,
+      rating: reviews.length > 0 ? ratingTotal / reviews.length : 0
+    });
+  } catch (error) {
+    console.error('Error fetching producer stats:', error);
+    res.status(500).json({ error: 'Failed to fetch producer stats' });
+  }
+}
+
 // Get all listings for a specific producer (fallback for empty ID handled by middleware check or param)
 async function getProducerListings(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const producerId = req.params.producerId || req.user.id;
   try {
     const listings = await prisma.listing.findMany({
@@ -17,6 +83,23 @@ async function getProducerListings(req, res) {
 
 // Create a new listing
 async function createListing(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const producerId = req.user.id;
   try {
     const listing = await prisma.listing.create({
@@ -30,6 +113,23 @@ async function createListing(req, res) {
 
 // Get a specific listing by ID
 async function getListingById(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id } = req.params;
   try {
     const listing = await prisma.listing.findUnique({ where: { id } });
@@ -42,6 +142,23 @@ async function getListingById(req, res) {
 
 // Vote on a listing
 async function voteListing(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id } = req.params;
   const { type } = req.body; 
   let updateData = {};
@@ -58,6 +175,23 @@ async function voteListing(req, res) {
 
 // Get comments for a listing
 async function getComments(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id } = req.params;
   try {
     const comments = await prisma.comment.findMany({
@@ -82,6 +216,23 @@ async function getComments(req, res) {
 
 // Post a comment
 async function postComment(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id: listingId } = req.params;
   const { text } = req.body;
   const authorId = req.user.id;
@@ -107,6 +258,23 @@ async function postComment(req, res) {
 
 // Reply to a comment
 async function replyComment(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { commentId } = req.params;
   const { text } = req.body;
 
@@ -132,6 +300,23 @@ async function replyComment(req, res) {
 
 // Get reviews for a listing
 async function getReviews(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id } = req.params;
   try {
     const reviews = await prisma.review.findMany({
@@ -156,12 +341,46 @@ async function getReviews(req, res) {
 
 // Can review
 async function canReview(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const isInvestor = req.user.role === 'INVESTOR';
   res.json({ canReview: isInvestor });
 }
 
 // Post a review
 async function postReview(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id: listingId } = req.params;
   const { rating, text } = req.body;
   const authorId = req.user.id;
@@ -186,6 +405,7 @@ async function postReview(req, res) {
 }
 
 module.exports = {
+  getProducerStats,
   getProducerListings,
   createListing,
   getListingById,

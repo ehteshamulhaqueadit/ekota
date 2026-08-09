@@ -66,11 +66,27 @@ class _HomeScreenState extends State<HomeScreen> {
                               fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 24),
-                        const CircleAvatar(
-                          radius: 44,
-                          backgroundColor: AppColors.inputFill,
-                          child: Icon(Icons.person,
-                              size: 44, color: Colors.white),
+                        PopupMenuButton<String>(
+                          onSelected: (value) async {
+                            if (value == 'logout') {
+                              await context.read<AuthProvider>().logout();
+                              if (context.mounted) {
+                                Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                              }
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'logout',
+                              child: Text('Logout'),
+                            ),
+                          ],
+                          child: const CircleAvatar(
+                            radius: 44,
+                            backgroundColor: AppColors.inputFill,
+                            child: Icon(Icons.person,
+                                size: 44, color: Colors.white),
+                          ),
                         ),
                         const SizedBox(height: 12),
                         Text(

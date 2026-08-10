@@ -147,70 +147,34 @@ export default function LoginPage({ onAuthenticated }: LoginPageProps) {
     const response = (await apiRequest('/auth/signup', {
       method: 'POST',
       body: JSON.stringify(payload),
-    })) as { message?: string; verificationRequired?: boolean; user?: { email?: string } };
+    })) as { message?: string; token?: string; user?: any };
 
-    setSuccess(response.message || 'Account created. Verify the OTP sent to email.');
-    setForm((prev) => ({ ...prev, otpCode: '', newPassword: '' }));
-    navigate('/verify');
+    if (response.token && response.user) {
+      const session: AuthSession = {
+        token: response.token,
+        user: response.user,
+      };
+      localStorage.setItem('ekota_admin_session', JSON.stringify(session));
+      onAuthenticated(session);
+    } else {
+      setSuccess('Account created successfully. You can sign in now.');
+      navigate('/login');
+    }
   }
 
   async function handleVerify() {
-    const payload: VerifyRegistrationPayload = {
-      email: form.email.trim(),
-      otpCode: form.otpCode.trim(),
-    };
-
-    const response = (await apiRequest('/auth/registration/confirm', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    })) as { message?: string };
-
-    setSuccess(response.message || 'Email verified successfully. You can sign in now.');
     navigate('/login');
   }
 
   async function handleResendVerification() {
-    const email = form.email.trim();
-
-    if (!email) {
-      throw new Error('Email is required');
-    }
-
-    const response = (await apiRequest('/auth/registration/request-verification', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    })) as { message?: string };
-
-    setSuccess(response.message || 'Verification OTP sent successfully.');
+    setSuccess('OTP verification is disabled in dev mode.');
   }
 
   async function handleResetRequest() {
-    const payload: RequestPasswordResetPayload = {
-      email: form.email.trim(),
-    };
-
-    const response = (await apiRequest('/auth/password-reset/request', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    })) as { message?: string };
-
-    setSuccess(response.message || 'If the account exists, a reset OTP has been sent.');
-    navigate('/reset-password');
+    navigate('/login');
   }
 
   async function handleResetPassword() {
-    const payload: ResetPasswordPayload = {
-      email: form.email.trim(),
-      otpCode: form.otpCode.trim(),
-      newPassword: form.newPassword,
-    };
-
-    const response = (await apiRequest('/auth/password-reset/reset-password', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    })) as { message?: string };
-
-    setSuccess(response.message || 'Password reset successful. Sign in with your new password.');
     navigate('/login');
   }
 
@@ -225,20 +189,11 @@ export default function LoginPage({ onAuthenticated }: LoginPageProps) {
         await handleLogin();
       } else if (mode === 'signup') {
         await handleSignup();
-      } else if (mode === 'verify') {
-        await handleVerify();
-      } else if (mode === 'reset-request') {
-        await handleResetRequest();
       } else {
-        await handleResetPassword();
+        navigate('/login');
       }
     } catch (err: any) {
-      // Catch specific backend error format and auto-redirect if unverified
-      if (err.message && err.message.toLowerCase().includes('not verified')) {
-        navigate('/verify');
-      } else {
-        setError(err instanceof Error ? err.message : 'Login failed');
-      }
+      setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setIsSubmitting(false);
     }

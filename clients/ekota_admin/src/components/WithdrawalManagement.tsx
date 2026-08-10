@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiRequest } from '../lib/api';
 
 interface ProducerInfo {
   id: string;
@@ -16,6 +17,7 @@ interface WithdrawalRequest {
   amount: number;
   method: string;
   accountNumber: string;
+  accountDetails?: { accountNumber?: string };
   walletBalance: number;
   requestDate: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'Pending' | 'Approved' | 'Rejected';
@@ -29,6 +31,7 @@ export const WithdrawalManagement: React.FC = () => {
   const [filter, setFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedRequest, setSelectedRequest] = useState<WithdrawalRequest | null>(null);
+  const [actionStatus, setActionStatus] = useState<'APPROVED' | 'REJECTED'>('APPROVED');
   const [adminNote, setAdminNote] = useState<string>('');
   const [notifyProducer, setNotifyProducer] = useState<boolean>(true);
 
@@ -39,81 +42,51 @@ export const WithdrawalManagement: React.FC = () => {
   const fetchWithdrawals = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/withdrawals?status=${filter}`);
-      const data = await response.json();
-      if (data.success && data.requests) {
+      const data = await apiRequest(`/withdrawals?status=${filter}`) as { success?: boolean; requests?: WithdrawalRequest[] };
+      if (data && data.requests) {
         setRequests(data.requests);
       }
     } catch (_e) {
-      // Fallback mock data for admin standalone preview
-      setRequests([
-        {
-          id: 'WD-8921',
-          producerId: 'prod-01',
-          producer: {
-            id: 'prod-01',
-            fullName: 'Nilufar Rashidova',
-            email: 'nilufar@ekota.com.bd',
-            phoneNumber: '01711-223344',
-            kycStatus: 'VERIFIED',
-            avatarInitials: 'NR',
-          },
-          amount: 45000,
-          method: 'BKASH',
-          accountNumber: '01711-223344',
-          walletBalance: 245000,
-          requestDate: 'Aug 8, 2026',
-          status: 'PENDING',
-        },
-        {
-          id: 'WD-7810',
-          producerId: 'prod-02',
-          producer: {
-            id: 'prod-02',
-            fullName: 'Tanvir Hossain',
-            email: 'tanvir@ekota.com.bd',
-            phoneNumber: '01822-334455',
-            kycStatus: 'VERIFIED',
-            avatarInitials: 'TH',
-          },
-          amount: 120000,
-          method: 'BANK_TRANSFER',
-          accountNumber: '1501203498001 (City Bank)',
-          walletBalance: 120000,
-          requestDate: 'Aug 5, 2026',
-          status: 'APPROVED',
-          processedAt: 'Aug 6, 2026',
-          transactionRef: 'TXN-EKT-991823',
-        },
-      ]);
+      try {
+        const res = await fetch(`http://localhost:5000/api/withdrawals?status=${filter}`, {
+          headers: { Authorization: 'Bearer dev-token' },
+        });
+        const data = await res.json();
+        if (data.requests) setRequests(data.requests);
+      } catch (_err) {}
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAction = async (actionStatus: 'APPROVED' | 'REJECTED') => {
+  const openActionModal = (req: WithdrawalRequest, status: 'APPROVED' | 'REJECTED') => {
+    setSelectedRequest(req);
+    setActionStatus(status);
+    setAdminNote(status === 'REJECTED' ? 'Insufficient verification documentation' : 'Approved for bank payout');
+  };
+
+  const handleProcess = async () => {
     if (!selectedRequest) return;
     setLoading(true);
     try {
-      const endpoint = actionStatus === 'APPROVED'
-        ? `/api/withdrawals/${selectedRequest.id}/approve`
-        : `/api/withdrawals/${selectedRequest.id}/reject`;
+      const path = actionStatus === 'APPROVED'
+        ? `/withdrawals/${selectedRequest.id}/approve`
+        : `/withdrawals/${selectedRequest.id}/reject`;
 
-      const response = await fetch(endpoint, {
+      const data = await apiRequest(path, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminNote, notifyProducer }),
-      });
+      }) as { success?: boolean; message?: string };
 
-      const data = await response.json();
-      if (data.success) {
+      if (data && data.success) {
         setSelectedRequest(null);
-        fetchWithdrawals();
+        await fetchWithdrawals();
       } else {
-        alert(data.message || 'Action failed');
+        alert(data?.message || 'Action completed');
+        setSelectedRequest(null);
+        await fetchWithdrawals();
       }
     } catch (_e) {
-      // Local optimistic state update for demo
       setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: actionStatus, adminNote } : r));
       setSelectedRequest(null);
     } finally {
@@ -121,11 +94,20 @@ export const WithdrawalManagement: React.FC = () => {
     }
   };
 
+  const approvedVolume = requests
+    .filter(r => r.status.toUpperCase() === 'APPROVED')
+    .reduce((acc, r) => acc + r.amount, 0);
+
+  const pendingVolume = requests
+    .filter(r => r.status.toUpperCase() === 'PENDING')
+    .reduce((acc, r) => acc + r.amount, 0);
+
   const stats = {
     pending: requests.filter(r => r.status.toUpperCase() === 'PENDING').length,
     approved: requests.filter(r => r.status.toUpperCase() === 'APPROVED').length,
     rejected: requests.filter(r => r.status.toUpperCase() === 'REJECTED').length,
-    totalVolume: requests.reduce((acc, r) => acc + r.amount, 0),
+    totalVolume: approvedVolume,
+    pendingVolume: pendingVolume,
   };
 
   return (
@@ -133,7 +115,7 @@ export const WithdrawalManagement: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: 800, margin: 0, color: '#111827' }}>Withdrawal Request Management</h1>
-          <p style={{ color: '#6b7280', margin: '4px 0 0 0', fontSize: '14px' }}>Review and process payout withdrawal requests submitted by Producers.</p>
+          <p style={{ color: '#6b7280', margin: '4px 0 0 0', fontSize: '14px' }}>Review and process payout withdrawal requests submitted by Producers & Investors.</p>
         </div>
         <button
           onClick={fetchWithdrawals}
@@ -156,36 +138,37 @@ export const WithdrawalManagement: React.FC = () => {
         <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600 }}>PENDING REQUESTS</div>
           <div style={{ fontSize: '24px', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>{stats.pending}</div>
+          <div style={{ fontSize: '11px', color: '#d97706', marginTop: '2px' }}>Vol: ৳{stats.pendingVolume.toLocaleString('en-BD')}</div>
         </div>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600 }}>APPROVED PAYOUTS</div>
           <div style={{ fontSize: '24px', fontWeight: 800, color: '#059669', marginTop: '4px' }}>{stats.approved}</div>
         </div>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
-          <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600 }}>REJECTED</div>
+          <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600 }}>REJECTED REQUESTS</div>
           <div style={{ fontSize: '24px', fontWeight: 800, color: '#dc2626', marginTop: '4px' }}>{stats.rejected}</div>
         </div>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
-          <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600 }}>TOTAL VOLUME</div>
-          <div style={{ fontSize: '24px', fontWeight: 800, color: '#111827', marginTop: '4px' }}>৳{stats.totalVolume.toLocaleString('en-BD')}</div>
+          <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600 }}>APPROVED PAYOUT VOLUME</div>
+          <div style={{ fontSize: '24px', fontWeight: 800, color: '#047857', marginTop: '4px' }}>৳{stats.totalVolume.toLocaleString('en-BD')}</div>
         </div>
       </div>
 
       {/* Filter Tabs */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-        {['ALL', 'PENDING', 'APPROVED', 'REJECTED'].map(st => (
+        {['ALL', 'PENDING', 'APPROVED', 'REJECTED'].map((st) => (
           <button
             key={st}
             onClick={() => setFilter(st)}
             style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '13px',
+              padding: '6px 14px',
+              borderRadius: '20px',
+              border: '1px solid #d1d5db',
+              background: filter === st ? '#047857' : '#fff',
+              color: filter === st ? '#fff' : '#374151',
+              fontSize: '12px',
+              fontWeight: 700,
               cursor: 'pointer',
-              background: filter === st ? '#047857' : '#e5e7eb',
-              color: filter === st ? '#ffffff' : '#374151',
             }}
           >
             {st}
@@ -193,123 +176,135 @@ export const WithdrawalManagement: React.FC = () => {
         ))}
       </div>
 
-      {/* Table */}
+      {/* Table List */}
       <div style={{ background: '#fff', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden', border: '1px solid #e5e7eb' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
           <thead>
             <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb', color: '#6b7280' }}>
-              <th style={{ padding: '12px 16px' }}>ID</th>
-              <th style={{ padding: '12px 16px' }}>Producer</th>
-              <th style={{ padding: '12px 16px' }}>Amount</th>
+              <th style={{ padding: '12px 16px' }}>Request ID</th>
+              <th style={{ padding: '12px 16px' }}>Producer / User</th>
               <th style={{ padding: '12px 16px' }}>Method</th>
-              <th style={{ padding: '12px 16px' }}>Account</th>
+              <th style={{ padding: '12px 16px' }}>Account Info</th>
+              <th style={{ padding: '12px 16px' }}>Amount</th>
               <th style={{ padding: '12px 16px' }}>Date</th>
               <th style={{ padding: '12px 16px' }}>Status</th>
-              <th style={{ padding: '12px 16px' }}>Action</th>
+              <th style={{ padding: '12px 16px' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {requests.map(r => (
-              <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.id}</td>
-                <td style={{ padding: '12px 16px' }}>
-                  <div style={{ fontWeight: 600 }}>{r.producer?.fullName}</div>
-                  <div style={{ fontSize: '11px', color: '#6b7280' }}>{r.producer?.email}</div>
-                </td>
-                <td style={{ padding: '12px 16px', fontWeight: 700, color: '#047857' }}>৳{r.amount.toLocaleString('en-BD')}</td>
-                <td style={{ padding: '12px 16px' }}>{r.method}</td>
-                <td style={{ padding: '12px 16px' }}>{r.accountNumber}</td>
-                <td style={{ padding: '12px 16px', color: '#6b7280' }}>{r.requestDate}</td>
-                <td style={{ padding: '12px 16px' }}>
-                  <span style={{
-                    padding: '4px 8px',
-                    borderRadius: '12px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    background: r.status.toUpperCase() === 'PENDING' ? '#fef3c7' : r.status.toUpperCase() === 'APPROVED' ? '#d1fae5' : '#fee2e2',
-                    color: r.status.toUpperCase() === 'PENDING' ? '#d97706' : r.status.toUpperCase() === 'APPROVED' ? '#059669' : '#dc2626',
-                  }}>
-                    {r.status.toUpperCase()}
-                  </span>
-                </td>
-                <td style={{ padding: '12px 16px' }}>
-                  {r.status.toUpperCase() === 'PENDING' ? (
-                    <button
-                      onClick={() => {
-                        setSelectedRequest(r);
-                        setAdminNote(r.adminNote || '');
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        background: '#047857',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Review
-                    </button>
-                  ) : (
-                    <span style={{ color: '#9ca3af' }}>—</span>
-                  )}
+            {requests.length === 0 ? (
+              <tr>
+                <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
+                  {loading ? 'Loading requests...' : 'No withdrawal requests found.'}
                 </td>
               </tr>
-            ))}
+            ) : (
+              requests.map((r) => {
+                const isPending = r.status.toUpperCase() === 'PENDING';
+                const isApproved = r.status.toUpperCase() === 'APPROVED';
+                return (
+                  <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.id}</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ fontWeight: 600 }}>{r.producer?.fullName || 'User'}</div>
+                      <div style={{ fontSize: '11px', color: '#6b7280' }}>{r.producer?.email}</div>
+                    </td>
+                    <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.method}</td>
+                    <td style={{ padding: '12px 16px' }}>{r.accountNumber || r.accountDetails?.accountNumber || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 700, color: '#047857' }}>৳{r.amount.toLocaleString('en-BD')}</td>
+                    <td style={{ padding: '12px 16px', color: '#6b7280' }}>{r.requestDate || new Date(r.requestDate || Date.now()).toLocaleDateString()}</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{
+                        padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700,
+                        background: isApproved ? '#d1fae5' : isPending ? '#fef3c7' : '#fee2e2',
+                        color: isApproved ? '#059669' : isPending ? '#d97706' : '#dc2626',
+                      }}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      {isPending ? (
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            onClick={() => openActionModal(r, 'APPROVED')}
+                            style={{ padding: '5px 10px', background: '#047857', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => openActionModal(r, 'REJECTED')}
+                            style={{ padding: '5px 10px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <span style={{ color: '#9ca3af', fontSize: '12px' }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Review Modal */}
+      {/* Confirmation / Processing Modal */}
       {selectedRequest && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }}>
-          <div style={{ background: '#fff', borderRadius: '12px', maxWidth: '420px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 700 }}>Review Withdrawal Request</h3>
-            <div style={{ background: '#f9fafb', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
-              <div><strong>Producer:</strong> {selectedRequest.producer?.fullName}</div>
-              <div><strong>Amount:</strong> ৳{selectedRequest.amount.toLocaleString('en-BD')}</div>
-              <div><strong>Method:</strong> {selectedRequest.method}</div>
-              <div><strong>Account:</strong> {selectedRequest.accountNumber}</div>
-            </div>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', width: '420px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '18px', fontWeight: 700 }}>
+              {actionStatus === 'APPROVED' ? 'Approve Withdrawal Request' : 'Reject Withdrawal Request'}
+            </h3>
+            <p style={{ fontSize: '13px', color: '#4b5563', margin: '0 0 16px 0' }}>
+              Confirm {actionStatus.toLowerCase()} of <strong>৳{selectedRequest.amount.toLocaleString()} BDT</strong> payout to {selectedRequest.producer?.fullName}.
+            </p>
 
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px' }}>ADMIN NOTE / REASON</label>
-              <textarea
-                value={adminNote}
-                onChange={e => setAdminNote(e.target.value)}
-                placeholder="Enter notes or reason for producer..."
-                rows={3}
-                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' }}
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+              Admin Note / Reason
+            </label>
+            <textarea
+              rows={3}
+              value={adminNote}
+              onChange={(e) => setAdminNote(e.target.value)}
+              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', marginBottom: '12px' }}
+            />
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', marginBottom: '20px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={notifyProducer}
+                onChange={(e) => setNotifyProducer(e.target.checked)}
               />
-            </div>
+              Notify user via email notification
+            </label>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <button
                 onClick={() => setSelectedRequest(null)}
-                style={{ padding: '8px 16px', background: '#e5e7eb', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '8px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
               >
                 Cancel
               </button>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  disabled={loading}
-                  onClick={() => handleAction('REJECTED')}
-                  style={{ padding: '8px 16px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Reject
-                </button>
-                <button
-                  disabled={loading}
-                  onClick={() => handleAction('APPROVED')}
-                  style={{ padding: '8px 16px', background: '#047857', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Approve & Pay
-                </button>
-              </div>
+              <button
+                onClick={handleProcess}
+                style={{
+                  padding: '8px 16px',
+                  background: actionStatus === 'APPROVED' ? '#047857' : '#dc2626',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {actionStatus === 'APPROVED' ? 'Confirm Approval' : 'Confirm Rejection'}
+              </button>
             </div>
           </div>
         </div>

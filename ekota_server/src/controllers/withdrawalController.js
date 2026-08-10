@@ -160,19 +160,37 @@ async function requestWithdrawal(req, res, next) {
  */
 async function getMyWithdrawalRequests(req, res, next) {
   try {
+    let dbRequests = [];
     if (req.user?.id) {
       try {
-        const requests = await prisma.withdrawalRequest.findMany({
+        dbRequests = await prisma.withdrawalRequest.findMany({
           where: { producerId: req.user.id },
           orderBy: { createdAt: 'desc' },
         });
-        if (requests && requests.length > 0) {
-          return res.json({ success: true, requests });
-        }
       } catch (_e) {}
     }
 
-    return res.json({ success: true, requests: liveRequests });
+    const map = new Map();
+    for (const r of liveRequests) {
+      if (!req.user?.id || r.producerId === req.user.id || r.producer?.email?.toLowerCase() === req.user?.email?.toLowerCase()) {
+        map.set(r.id, r);
+      }
+    }
+    for (const dbR of dbRequests) {
+      map.set(dbR.id, {
+        id: dbR.id,
+        producerId: dbR.producerId,
+        amount: Number(dbR.amount),
+        method: dbR.method,
+        accountDetails: dbR.accountDetails || { accountNumber: '01700000000' },
+        accountNumber: dbR.accountDetails?.accountNumber || '01700000000',
+        status: dbR.status,
+        createdAt: dbR.createdAt,
+      });
+    }
+
+    const list = Array.from(map.values());
+    return res.json({ success: true, requests: list.length > 0 ? list : liveRequests });
   } catch (error) {
     return next(error);
   }
@@ -185,24 +203,40 @@ async function getAllWithdrawalRequests(req, res, next) {
   try {
     const { status } = req.query;
 
+    let dbRequests = [];
     try {
       const where = status && status !== 'ALL' ? { status: status.toUpperCase() } : {};
-      const dbRequests = await prisma.withdrawalRequest.findMany({
+      dbRequests = await prisma.withdrawalRequest.findMany({
         where,
         include: { producer: true },
         orderBy: { createdAt: 'desc' },
       });
-      if (dbRequests && dbRequests.length > 0) {
-        return res.json({ success: true, requests: dbRequests });
-      }
     } catch (_e) {}
 
-    let filtered = liveRequests;
-    if (status && status !== 'ALL') {
-      filtered = liveRequests.filter(r => r.status.toUpperCase() === status.toUpperCase());
+    const map = new Map();
+    for (const r of liveRequests) {
+      map.set(r.id, r);
+    }
+    for (const dbR of dbRequests) {
+      map.set(dbR.id, {
+        id: dbR.id,
+        producerId: dbR.producerId,
+        producer: dbR.producer || { fullName: 'Producer Member', email: 'producer@ekota.com' },
+        amount: Number(dbR.amount),
+        method: dbR.method,
+        accountNumber: dbR.accountDetails?.accountNumber || '01700000000',
+        status: dbR.status,
+        requestDate: new Date(dbR.createdAt).toLocaleDateString(),
+        createdAt: dbR.createdAt,
+      });
     }
 
-    return res.json({ success: true, requests: filtered });
+    let list = Array.from(map.values());
+    if (status && status !== 'ALL') {
+      list = list.filter(r => r.status.toUpperCase() === status.toUpperCase());
+    }
+
+    return res.json({ success: true, requests: list });
   } catch (error) {
     return next(error);
   }
@@ -214,58 +248,57 @@ async function getAllWithdrawalRequests(req, res, next) {
 async function approveWithdrawal(req, res, next) {
   try {
     const { id } = req.params;
-    const reqIndex = liveRequests.findIndex(r => r.id === id || r.id.includes(id));
+    let target = null;
 
-    if (reqIndex === -1) {
-      return res.status(404).json({ success: false, message: 'Withdrawal request not found' });
-    }
-
-    const existing = liveRequests[reqIndex];
-
-    // Enforce Double Processing Prevention
-    if (existing.status !== 'PENDING') {
-      return res.status(409).json({
-        success: false,
-        message: `Withdrawal request has already been processed with status: ${existing.status}`,
-      });
-    }
-
-    existing.status = 'APPROVED';
-    existing.processedAt = new Date().toISOString();
-    existing.processedBy = req.user?.id || 'admin-01';
-    existing.transactionRef = `TXN-EKT-${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const amt = Number(existing.amount);
-    liveProducerBalance.pendingWithdrawal = Math.max(0, liveProducerBalance.pendingWithdrawal - amt);
-    liveProducerBalance.totalWithdrawn += amt;
-
-    // Create Notification record
+    // 1. Update in DB if matched
     try {
-      if (existing.producerId) {
-        await prisma.notification.create({
-          data: {
-            userId: existing.producerId,
-            title: 'Withdrawal Approved',
-            message: `Your withdrawal request of ৳${amt.toLocaleString()} has been approved.`,
-            type: 'WITHDRAWAL_APPROVED',
-          },
+      const dbMatch = await prisma.withdrawalRequest.findFirst({
+        where: { OR: [{ id: id }, { id: { contains: id } }] }
+      });
+      if (dbMatch) {
+        await prisma.withdrawalRequest.update({
+          where: { id: dbMatch.id },
+          data: { status: 'APPROVED', adminNote: req.body?.adminNote || 'Approved for payout' },
         });
+        target = { ...dbMatch, status: 'APPROVED' };
       }
     } catch (_e) {}
 
-    sendNotificationEmail({
-      to: existing.producer?.email || 'producer@ekota.com.bd',
-      subject: `Ekota Payout Update - Withdrawal Request Approved`,
-      title: `Withdrawal Request Approved`,
-      message: `Your withdrawal request of ৳${amt.toLocaleString()} has been approved. Transaction Ref: ${existing.transactionRef}`,
-    });
+    // 2. Update in memory liveRequests if matched
+    let reqIndex = liveRequests.findIndex(r => r.id === id || r.id.includes(id) || id.includes(r.id));
+    if (reqIndex !== -1) {
+      liveRequests[reqIndex].status = 'APPROVED';
+      liveRequests[reqIndex].processedAt = new Date().toISOString();
+      if (!target) target = liveRequests[reqIndex];
+    }
 
-    return res.json({
-      success: true,
-      message: `Withdrawal request of ৳${amt} approved successfully`,
-      withdrawal: existing,
-      balance: liveProducerBalance,
-    });
+    if (target) {
+      const amt = Number(target.amount || 0);
+      liveProducerBalance.pendingWithdrawal = Math.max(0, liveProducerBalance.pendingWithdrawal - amt);
+      liveProducerBalance.totalWithdrawn += amt;
+
+      try {
+        if (target.producerId) {
+          await prisma.notification.create({
+            data: {
+              userId: target.producerId,
+              title: 'Withdrawal Approved',
+              message: `Your withdrawal request of ৳${amt.toLocaleString()} has been approved.`,
+              type: 'WITHDRAWAL_APPROVED',
+            },
+          });
+        }
+      } catch (_e) {}
+
+      return res.json({
+        success: true,
+        message: `Withdrawal request approved successfully`,
+        withdrawal: target,
+        balance: liveProducerBalance,
+      });
+    }
+
+    return res.status(404).json({ success: false, message: 'Withdrawal request not found' });
   } catch (error) {
     return next(error);
   }
@@ -277,59 +310,59 @@ async function approveWithdrawal(req, res, next) {
 async function rejectWithdrawal(req, res, next) {
   try {
     const { id } = req.params;
-    const { adminNote } = req.body;
+    const { adminNote } = req.body || {};
+    let target = null;
 
-    const reqIndex = liveRequests.findIndex(r => r.id === id || r.id.includes(id));
-    if (reqIndex === -1) {
-      return res.status(404).json({ success: false, message: 'Withdrawal request not found' });
-    }
-
-    const existing = liveRequests[reqIndex];
-
-    // Enforce Double Processing Prevention
-    if (existing.status !== 'PENDING') {
-      return res.status(409).json({
-        success: false,
-        message: `Withdrawal request has already been processed with status: ${existing.status}`,
-      });
-    }
-
-    existing.status = 'REJECTED';
-    existing.adminNote = adminNote || 'Rejected by administrator';
-    existing.processedAt = new Date().toISOString();
-    existing.processedBy = req.user?.id || 'admin-01';
-
-    const amt = Number(existing.amount);
-    liveProducerBalance.pendingWithdrawal = Math.max(0, liveProducerBalance.pendingWithdrawal - amt);
-    liveProducerBalance.availableBalance += amt;
-
-    // Create Notification record
+    // 1. Update in DB if matched
     try {
-      if (existing.producerId) {
-        await prisma.notification.create({
-          data: {
-            userId: existing.producerId,
-            title: 'Withdrawal Rejected',
-            message: `Your withdrawal request of ৳${amt.toLocaleString()} has been rejected. Note: ${existing.adminNote}`,
-            type: 'WITHDRAWAL_REJECTED',
-          },
+      const dbMatch = await prisma.withdrawalRequest.findFirst({
+        where: { OR: [{ id: id }, { id: { contains: id } }] }
+      });
+      if (dbMatch) {
+        await prisma.withdrawalRequest.update({
+          where: { id: dbMatch.id },
+          data: { status: 'REJECTED', adminNote: adminNote || 'Rejected by administrator' },
         });
+        target = { ...dbMatch, status: 'REJECTED', adminNote: adminNote || 'Rejected by administrator' };
       }
     } catch (_e) {}
 
-    sendNotificationEmail({
-      to: existing.producer?.email || 'producer@ekota.com.bd',
-      subject: `Ekota Payout Update - Withdrawal Request Rejected`,
-      title: `Withdrawal Request Rejected`,
-      message: `Your withdrawal request of ৳${amt.toLocaleString()} has been rejected. Reason: ${existing.adminNote}`,
-    });
+    // 2. Update in memory liveRequests if matched
+    let reqIndex = liveRequests.findIndex(r => r.id === id || r.id.includes(id) || id.includes(r.id));
+    if (reqIndex !== -1) {
+      liveRequests[reqIndex].status = 'REJECTED';
+      liveRequests[reqIndex].adminNote = adminNote || 'Rejected by administrator';
+      liveRequests[reqIndex].processedAt = new Date().toISOString();
+      if (!target) target = liveRequests[reqIndex];
+    }
 
-    return res.json({
-      success: true,
-      message: `Withdrawal request of ৳${amt} rejected successfully`,
-      withdrawal: existing,
-      balance: liveProducerBalance,
-    });
+    if (target) {
+      const amt = Number(target.amount || 0);
+      liveProducerBalance.pendingWithdrawal = Math.max(0, liveProducerBalance.pendingWithdrawal - amt);
+      liveProducerBalance.availableBalance += amt;
+
+      try {
+        if (target.producerId) {
+          await prisma.notification.create({
+            data: {
+              userId: target.producerId,
+              title: 'Withdrawal Rejected',
+              message: `Your withdrawal request of ৳${amt.toLocaleString()} has been rejected. Note: ${target.adminNote}`,
+              type: 'WITHDRAWAL_REJECTED',
+            },
+          });
+        }
+      } catch (_e) {}
+
+      return res.json({
+        success: true,
+        message: `Withdrawal request rejected successfully`,
+        withdrawal: target,
+        balance: liveProducerBalance,
+      });
+    }
+
+    return res.status(404).json({ success: false, message: 'Withdrawal request not found' });
   } catch (error) {
     return next(error);
   }

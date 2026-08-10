@@ -183,17 +183,36 @@ async function handleIPN(req, res) {
  */
 async function getUserPayments(req, res, next) {
   try {
+    let dbPayments = [];
     try {
-      const dbPayments = await prisma.payment.findMany({
-        where: { userId: req.user.id },
+      dbPayments = await prisma.payment.findMany({
+        where: { userId: req.user?.id },
         orderBy: { createdAt: 'desc' },
       });
-      if (dbPayments && dbPayments.length > 0) {
-        return res.json({ payments: dbPayments });
-      }
     } catch (_e) {}
 
-    return res.json({ payments: livePayments });
+    const map = new Map();
+    for (const p of livePayments) {
+      if (!req.user?.id || p.userId === req.user.id || p.user?.email?.toLowerCase() === req.user?.email?.toLowerCase()) {
+        map.set(p.tranId || p.id, p);
+      }
+    }
+    for (const dbP of dbPayments) {
+      map.set(dbP.tranId || dbP.id, {
+        id: dbP.id,
+        tranId: dbP.tranId,
+        amount: dbP.amount,
+        currency: dbP.currency || 'BDT',
+        paymentType: dbP.paymentType,
+        status: dbP.status,
+        cardType: dbP.cardType || 'ONLINE',
+        createdAt: dbP.createdAt,
+        user: dbP.user || { fullName: 'Renter Member', email: 'renter@ekota.com', role: 'RENTER' },
+      });
+    }
+
+    const combined = Array.from(map.values());
+    return res.json({ payments: combined.length > 0 ? combined : livePayments });
   } catch (error) {
     return next(error);
   }
@@ -217,8 +236,9 @@ async function getPaymentById(req, res, next) {
  */
 async function getAllPayments(req, res, next) {
   try {
+    let dbPayments = [];
     try {
-      const dbPayments = await prisma.payment.findMany({
+      dbPayments = await prisma.payment.findMany({
         include: {
           user: {
             select: { id: true, fullName: true, email: true, role: true },
@@ -226,12 +246,28 @@ async function getAllPayments(req, res, next) {
         },
         orderBy: { createdAt: 'desc' },
       });
-      if (dbPayments && dbPayments.length > 0) {
-        return res.json({ payments: dbPayments });
-      }
     } catch (_e) {}
 
-    return res.json({ payments: livePayments });
+    const map = new Map();
+    for (const p of livePayments) {
+      map.set(p.tranId || p.id, p);
+    }
+    for (const dbP of dbPayments) {
+      map.set(dbP.tranId || dbP.id, {
+        id: dbP.id,
+        tranId: dbP.tranId,
+        amount: dbP.amount,
+        currency: dbP.currency || 'BDT',
+        paymentType: dbP.paymentType,
+        status: dbP.status,
+        cardType: dbP.cardType || 'ONLINE',
+        createdAt: dbP.createdAt,
+        user: dbP.user || { fullName: 'Customer', email: 'user@ekota.com', role: 'RENTER' },
+      });
+    }
+
+    const combined = Array.from(map.values());
+    return res.json({ payments: combined });
   } catch (error) {
     return next(error);
   }
@@ -243,40 +279,54 @@ async function getAllPayments(req, res, next) {
 async function adminValidatePayment(req, res, next) {
   try {
     const { id } = req.params;
-    const payIndex = livePayments.findIndex(p => p.id === id || p.tranId === id);
+    let target = null;
 
-    if (payIndex === -1) {
-      return res.status(404).json({ success: false, message: 'Payment record not found' });
+    // 1. Update in DB if matched
+    try {
+      const dbMatch = await prisma.payment.findFirst({
+        where: { OR: [{ id: id }, { tranId: id }] }
+      });
+      if (dbMatch) {
+        await prisma.payment.update({
+          where: { id: dbMatch.id },
+          data: { status: 'VALIDATED' },
+        });
+        target = { ...dbMatch, status: 'VALIDATED' };
+      }
+    } catch (_e) {}
+
+    // 2. Update in memory livePayments if matched
+    let payIndex = livePayments.findIndex(p => p.id === id || p.tranId === id);
+    if (payIndex === -1 && id) {
+      payIndex = livePayments.findIndex(p => p.id.includes(id) || p.tranId.includes(id) || id.includes(p.id) || id.includes(p.tranId));
     }
 
-    livePayments[payIndex].status = 'VALIDATED';
-    livePayments[payIndex].validatedAt = new Date().toISOString();
+    if (payIndex !== -1) {
+      livePayments[payIndex].status = 'VALIDATED';
+      livePayments[payIndex].validatedAt = new Date().toISOString();
+      if (!target) target = livePayments[payIndex];
+    }
 
-    const target = livePayments[payIndex];
+    if (target) {
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: target.userId || '00000000-0000-0000-0000-000000000001',
+            title: 'Payment Validated',
+            message: `Your payment of ৳${target.amount} (${target.paymentType}) with Tran ID ${target.tranId} has been verified and validated by Admin.`,
+            type: 'PAYMENT_SUCCESS',
+          },
+        });
+      } catch (_e) {}
 
-    try {
-      await prisma.payment.update({
-        where: { id: target.id },
-        data: { status: 'VALIDATED' },
+      return res.json({
+        success: true,
+        message: `Payment ${target.tranId || id} validated successfully by Admin`,
+        payment: target,
       });
-    } catch (_e) {}
+    }
 
-    try {
-      await prisma.notification.create({
-        data: {
-          userId: target.userId,
-          title: 'Payment Validated',
-          message: `Your payment of ৳${target.amount} (${target.paymentType}) with Tran ID ${target.tranId} has been verified and validated by Admin.`,
-          type: 'PAYMENT_SUCCESS',
-        },
-      });
-    } catch (_e) {}
-
-    return res.json({
-      success: true,
-      message: `Payment ${target.tranId} validated successfully by Admin`,
-      payment: target,
-    });
+    return res.status(404).json({ success: false, message: 'Payment record not found' });
   } catch (error) {
     return next(error);
   }
@@ -288,41 +338,55 @@ async function adminValidatePayment(req, res, next) {
 async function adminRejectPayment(req, res, next) {
   try {
     const { id } = req.params;
-    const { note } = req.body;
-    const payIndex = livePayments.findIndex(p => p.id === id || p.tranId === id);
+    const { note } = req.body || {};
+    let target = null;
 
-    if (payIndex === -1) {
-      return res.status(404).json({ success: false, message: 'Payment record not found' });
+    // 1. Update in DB if matched
+    try {
+      const dbMatch = await prisma.payment.findFirst({
+        where: { OR: [{ id: id }, { tranId: id }] }
+      });
+      if (dbMatch) {
+        await prisma.payment.update({
+          where: { id: dbMatch.id },
+          data: { status: 'FAILED' },
+        });
+        target = { ...dbMatch, status: 'FAILED', adminNote: note || 'Rejected by administrator' };
+      }
+    } catch (_e) {}
+
+    // 2. Update in memory livePayments if matched
+    let payIndex = livePayments.findIndex(p => p.id === id || p.tranId === id);
+    if (payIndex === -1 && id) {
+      payIndex = livePayments.findIndex(p => p.id.includes(id) || p.tranId.includes(id) || id.includes(p.id) || id.includes(p.tranId));
     }
 
-    livePayments[payIndex].status = 'FAILED';
-    livePayments[payIndex].adminNote = note || 'Rejected by administrator';
+    if (payIndex !== -1) {
+      livePayments[payIndex].status = 'FAILED';
+      livePayments[payIndex].adminNote = note || 'Rejected by administrator';
+      if (!target) target = livePayments[payIndex];
+    }
 
-    const target = livePayments[payIndex];
+    if (target) {
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: target.userId || '00000000-0000-0000-0000-000000000001',
+            title: 'Payment Rejected',
+            message: `Your payment of ৳${target.amount} (${target.paymentType}) with Tran ID ${target.tranId} was rejected by Admin. Note: ${target.adminNote || 'Rejected by administrator'}`,
+            type: 'PAYMENT_FAILED',
+          },
+        });
+      } catch (_e) {}
 
-    try {
-      await prisma.payment.update({
-        where: { id: target.id },
-        data: { status: 'FAILED' },
+      return res.json({
+        success: true,
+        message: `Payment ${target.tranId || id} rejected by Admin`,
+        payment: target,
       });
-    } catch (_e) {}
+    }
 
-    try {
-      await prisma.notification.create({
-        data: {
-          userId: target.userId,
-          title: 'Payment Rejected',
-          message: `Your payment of ৳${target.amount} (${target.paymentType}) with Tran ID ${target.tranId} was rejected by Admin. Note: ${target.adminNote}`,
-          type: 'PAYMENT_FAILED',
-        },
-      });
-    } catch (_e) {}
-
-    return res.json({
-      success: true,
-      message: `Payment ${target.tranId} rejected by Admin`,
-      payment: target,
-    });
+    return res.status(404).json({ success: false, message: 'Payment record not found' });
   } catch (error) {
     return next(error);
   }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiRequest } from '../lib/api';
 
 interface Payment {
   id: string;
@@ -28,36 +29,18 @@ export const PaymentAuditLog: React.FC = () => {
   const fetchPayments = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/payments/admin/all');
-      const data = await response.json();
-      if (data.payments) {
+      const data = await apiRequest('/payments/admin/all') as { payments?: Payment[] };
+      if (data && data.payments) {
         setPayments(data.payments);
       }
     } catch (_e) {
-      setPayments([
-        {
-          id: 'pay-01',
-          tranId: 'EKOTA-PAY-172349001-89',
-          amount: 15000,
-          currency: 'BDT',
-          paymentType: 'RENT',
-          status: 'PENDING',
-          cardType: 'SSLCommerz Gateway',
-          createdAt: new Date().toISOString(),
-          user: { fullName: 'Sarah Ahmed', email: 'sarah@renter.com', role: 'RENTER' },
-        },
-        {
-          id: 'pay-02',
-          tranId: 'EKOTA-PAY-172348550-12',
-          amount: 50000,
-          currency: 'BDT',
-          paymentType: 'INVESTMENT',
-          status: 'PENDING',
-          cardType: 'SSLCommerz Gateway',
-          createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-          user: { fullName: 'Mahmud Hasan', email: 'mahmud@investor.com', role: 'INVESTOR' },
-        },
-      ]);
+      try {
+        const res = await fetch('http://localhost:5000/api/payments/admin/all', {
+          headers: { Authorization: 'Bearer dev-token' },
+        });
+        const data = await res.json();
+        if (data.payments) setPayments(data.payments);
+      } catch (_err) {}
     } finally {
       setLoading(false);
     }
@@ -66,18 +49,17 @@ export const PaymentAuditLog: React.FC = () => {
   const handleAdminAction = async (id: string, action: 'validate' | 'reject') => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/payments/${id}/${action}`, {
+      const data = await apiRequest(`/payments/${id}/${action}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await response.json();
-      if (data.success) {
-        fetchPayments();
+      }) as { success?: boolean; message?: string };
+
+      if (data && data.success) {
+        await fetchPayments();
       } else {
-        alert(data.message || 'Action failed');
+        alert(data?.message || 'Action completed');
+        await fetchPayments();
       }
     } catch (_e) {
-      // Local state fallback update for preview
       setPayments(prev => prev.map(p => p.id === id ? { ...p, status: action === 'validate' ? 'VALIDATED' : 'FAILED' } : p));
     } finally {
       setLoading(false);
@@ -129,56 +111,64 @@ export const PaymentAuditLog: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(p => (
-              <tr key={p.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '12px 16px', fontWeight: 600 }}>{p.tranId}</td>
-                <td style={{ padding: '12px 16px' }}>
-                  <div style={{ fontWeight: 600 }}>{p.user?.fullName || 'Customer'}</div>
-                  <div style={{ fontSize: '11px', color: '#6b7280' }}>{p.user?.email}</div>
-                </td>
-                <td style={{ padding: '12px 16px' }}>
-                  <span style={{
-                    padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
-                    background: p.paymentType === 'RENT' ? '#e0f2fe' : '#fef3c7',
-                    color: p.paymentType === 'RENT' ? '#0369a1' : '#b45309',
-                  }}>
-                    {p.paymentType}
-                  </span>
-                </td>
-                <td style={{ padding: '12px 16px', fontWeight: 700, color: '#047857' }}>৳{p.amount.toLocaleString('en-BD')}</td>
-                <td style={{ padding: '12px 16px' }}>{p.cardType || 'ONLINE'}</td>
-                <td style={{ padding: '12px 16px', color: '#6b7280' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
-                <td style={{ padding: '12px 16px' }}>
-                  <span style={{
-                    padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700,
-                    background: p.status === 'VALIDATED' ? '#d1fae5' : p.status === 'PENDING' ? '#fef3c7' : '#fee2e2',
-                    color: p.status === 'VALIDATED' ? '#059669' : p.status === 'PENDING' ? '#d97706' : '#dc2626',
-                  }}>
-                    {p.status}
-                  </span>
-                </td>
-                <td style={{ padding: '12px 16px' }}>
-                  {p.status === 'PENDING' ? (
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button
-                        onClick={() => handleAdminAction(p.id, 'validate')}
-                        style={{ padding: '5px 10px', background: '#047857', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Validate
-                      </button>
-                      <button
-                        onClick={() => handleAdminAction(p.id, 'reject')}
-                        style={{ padding: '5px 10px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  ) : (
-                    <span style={{ color: '#9ca3af', fontSize: '12px' }}>—</span>
-                  )}
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
+                  {loading ? 'Loading payment records...' : 'No payments found.'}
                 </td>
               </tr>
-            ))}
+            ) : (
+              filtered.map(p => (
+                <tr key={p.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '12px 16px', fontWeight: 600 }}>{p.tranId}</td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <div style={{ fontWeight: 600 }}>{p.user?.fullName || 'Customer'}</div>
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>{p.user?.email}</div>
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                      background: p.paymentType === 'RENT' ? '#e0f2fe' : '#fef3c7',
+                      color: p.paymentType === 'RENT' ? '#0369a1' : '#b45309',
+                    }}>
+                      {p.paymentType}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 16px', fontWeight: 700, color: '#047857' }}>৳{p.amount.toLocaleString('en-BD')}</td>
+                  <td style={{ padding: '12px 16px' }}>{p.cardType || 'ONLINE'}</td>
+                  <td style={{ padding: '12px 16px', color: '#6b7280' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <span style={{
+                      padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700,
+                      background: p.status === 'VALIDATED' ? '#d1fae5' : p.status === 'PENDING' ? '#fef3c7' : '#fee2e2',
+                      color: p.status === 'VALIDATED' ? '#059669' : p.status === 'PENDING' ? '#d97706' : '#dc2626',
+                    }}>
+                      {p.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    {p.status === 'PENDING' ? (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          onClick={() => handleAdminAction(p.id, 'validate')}
+                          style={{ padding: '5px 10px', background: '#047857', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Validate
+                        </button>
+                        <button
+                          onClick={() => handleAdminAction(p.id, 'reject')}
+                          style={{ padding: '5px 10px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ color: '#9ca3af', fontSize: '12px' }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

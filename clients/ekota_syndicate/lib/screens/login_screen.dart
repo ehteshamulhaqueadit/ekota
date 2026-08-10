@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
+import 'investor_withdrawal_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -50,14 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const SyndicateHomeScreen()));
       } else {
         final data = jsonDecode(response.body);
-        if (response.statusCode == 403 && data['message'] != null && data['message'].toString().toLowerCase().contains('not verified')) {
-          if (!mounted) return;
-          Navigator.push(context, MaterialPageRoute(
-            builder: (_) => RegistrationVerificationScreen(email: _emailController.text.trim()),
-          ));
-        } else {
-          setState(() => _error = data['message'] ?? 'Login failed');
-        }
+        setState(() => _error = data['message'] ?? 'Login failed');
       }
     } catch (e) {
       setState(() => _error = e.toString());
@@ -95,7 +89,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
                   if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
                   const SizedBox(height: 12),
-                  const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -106,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SyndicateSignupScreen())),
-                    child: const Text('Sign Up'),
+                    child: const Text('Don\'t have an account? Sign Up'),
                   ),
                   TextButton(
                     onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PasswordResetRequestScreen())),
@@ -129,24 +122,7 @@ class SyndicateHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ekota Syndicate'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.clear();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
-              }
-            },
-          ),
-        ],
-      ),
-      body: const Center(child: Text('Ekota Syndicate mobile app')),
-    );
+    return const InvestorWithdrawalScreen();
   }
 }
 
@@ -179,14 +155,16 @@ class _SyndicateSignupScreenState extends State<SyndicateSignupScreen> {
         }),
       );
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('is_logged_in', true);
+        await prefs.setString('user_email', _emailController.text.trim());
+        if (data['token'] != null) {
+          await prefs.setString('auth_token', data['token']);
+        }
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Account created. Please check your email for OTP verification.')),
-        );
-        Navigator.pushReplacement(context, MaterialPageRoute(
-          builder: (_) => RegistrationVerificationScreen(email: _emailController.text.trim()),
-        ));
+        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const SyndicateHomeScreen()));
       } else {
         final data = jsonDecode(response.body);
         if (!mounted) return;

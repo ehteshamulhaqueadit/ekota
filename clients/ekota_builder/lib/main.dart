@@ -15,6 +15,7 @@ import 'screens/signup_screen.dart';
 import 'screens/otp_verification_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/reset_password_screen.dart';
+import 'screens/producer_withdrawal_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,6 +52,7 @@ class EkotaBuilderApp extends StatelessWidget {
               '/home': (_) => const HomeScreen(),
               '/producer/items': (_) => const YourItemsScreen(),
               '/producer/items/create': (_) => const AddItemScreen(),
+              '/producer/withdrawals': (_) => const ProducerWithdrawalScreen(),
               '/signup': (_) => const SignupScreen(),
               '/verify-otp': (_) => const OtpVerificationScreen(),
               '/forgot-password': (_) => const ForgotPasswordScreen(),

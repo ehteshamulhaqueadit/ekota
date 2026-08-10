@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -20,11 +21,23 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String? _successMessage;
   List<PaymentModel> _payments = [];
   String _filterStatus = 'ALL';
+  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     _loadPaymentHistory();
+    // Auto-poll history every 3 seconds so status changes (VALIDATED/REJECTED by Admin) reflect live
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _loadPaymentHistory();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    _amountController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPaymentHistory() async {
@@ -76,7 +89,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         }
 
         setState(() {
-          _successMessage = 'SSLCommerz payment session initiated. Transaction ID: ${result['tranId']}';
+          _successMessage = 'SSLCommerz payment session initiated. Status is PENDING admin verification.';
         });
         _loadPaymentHistory();
       } else {
@@ -95,7 +108,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Widget build(BuildContext context) {
     final filteredList = _filterStatus == 'ALL'
         ? _payments
-        : _payments.where((p) => p.status.toUpperCase() == _filterStatus.toUpperCase()).toList();
+        : _payments.where((p) {
+            final st = p.status.toUpperCase();
+            if (_filterStatus == 'REJECTED') {
+              return st == 'FAILED' || st == 'REJECTED' || st == 'CANCELLED';
+            }
+            return st == _filterStatus.toUpperCase();
+          }).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -110,6 +129,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
+              _pollingTimer?.cancel();
               final prefs = await SharedPreferences.getInstance();
               await prefs.clear();
               if (mounted) {
@@ -244,7 +264,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                    children: ['ALL', 'VALIDATED', 'PENDING'].map((st) {
+                    children: ['ALL', 'VALIDATED', 'PENDING', 'REJECTED'].map((st) {
                       return Padding(
                         padding: const EdgeInsets.only(left: 4),
                         child: ChoiceChip(
@@ -286,33 +306,56 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 itemCount: filteredList.length,
                 itemBuilder: (context, index) {
                   final p = filteredList[index];
-                  final isValidated = p.status.toUpperCase() == 'VALIDATED';
+                  final st = p.status.toUpperCase();
+                  final isValidated = st == 'VALIDATED';
+                  final isRejected = st == 'FAILED' || st == 'REJECTED' || st == 'CANCELLED';
+
+                  final badgeColor = isValidated
+                      ? Colors.green
+                      : isRejected
+                          ? Colors.red
+                          : Colors.amber.shade800;
+
+                  final badgeBg = isValidated
+                      ? Colors.green.shade50
+                      : isRejected
+                          ? Colors.red.shade50
+                          : Colors.amber.shade50;
+
+                  final iconData = isValidated
+                      ? Icons.check_circle
+                      : isRejected
+                          ? Icons.cancel
+                          : Icons.access_time;
+
+                  final statusLabel = isValidated
+                      ? 'VALIDATED'
+                      : isRejected
+                          ? 'REJECTED'
+                          : 'PENDING';
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     child: ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: isValidated ? Colors.green.shade100 : Colors.amber.shade100,
-                        child: Icon(
-                          isValidated ? Icons.check_circle : Icons.access_time,
-                          color: isValidated ? Colors.green : Colors.amber.shade800,
-                        ),
+                        backgroundColor: badgeBg,
+                        child: Icon(iconData, color: badgeColor),
                       ),
                       title: Text('৳${p.amount.toStringAsFixed(2)} BDT', style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text('${p.paymentType} • ${p.tranId}'),
                       trailing: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: isValidated ? Colors.green.shade50 : Colors.amber.shade50,
+                          color: badgeBg,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: isValidated ? Colors.green : Colors.amber),
+                          border: Border.all(color: badgeColor),
                         ),
                         child: Text(
-                          p.status,
+                          statusLabel,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: isValidated ? Colors.green : Colors.amber.shade900,
+                            color: badgeColor,
                           ),
                         ),
                       ),

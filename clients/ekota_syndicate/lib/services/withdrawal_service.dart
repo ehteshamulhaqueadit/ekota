@@ -43,6 +43,24 @@ class WithdrawalService {
     }
   }
 
+  Future<List<dynamic>> fetchUserPayments(String token) async {
+    try {
+      final paymentUrl = baseUrl.replaceAll('/withdrawals', '/payments/my');
+      final response = await http.get(
+        Uri.parse(paymentUrl),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['payments'] ?? [];
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<Map<String, dynamic>> submitWithdrawal({
     required double amount,
     required String method,
@@ -71,6 +89,40 @@ class WithdrawalService {
       }
     } catch (e) {
       return {'success': false, 'message': 'Network connection failed. Is backend server running?'};
+    }
+  }
+
+  Future<Map<String, dynamic>> initiatePayment({
+    required double amount,
+    required String paymentType,
+    required String token,
+  }) async {
+    try {
+      final paymentUrl = baseUrl.replaceAll('/withdrawals', '/payments/initiate');
+      final response = await http.post(
+        Uri.parse(paymentUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'amount': amount,
+          'paymentType': paymentType,
+          'productName': 'Ekota Investment Funding',
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return {
+          'success': true,
+          'gatewayPageUrl': data['gatewayPageUrl'],
+          'tranId': data['tranId'],
+        };
+      }
+      return {'success': false, 'message': data['message'] ?? 'Payment initiation failed'};
+    } catch (e) {
+      return {'success': false, 'message': 'Network connection failed: $e'};
     }
   }
 }

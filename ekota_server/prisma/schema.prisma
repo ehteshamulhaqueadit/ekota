@@ -45,9 +45,14 @@ model User {
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
-  listings        Listing[]
-  comments        Comment[]
-  reviews         Review[]
+  listings            Listing[]
+  comments            Comment[]
+  reviews             Review[]
+  payments            Payment[]
+  producerBalance     ProducerBalance?
+  withdrawalRequests  WithdrawalRequest[] @relation("ProducerWithdrawals")
+  reviewedWithdrawals WithdrawalRequest[] @relation("AdminReviewedWithdrawals")
+  notifications       Notification[]
 
   @@map("users")
 }
@@ -61,6 +66,112 @@ model OtpVerification {
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("otp_verifications")
+}
+
+enum PaymentStatus {
+  PENDING
+  VALIDATED
+  FAILED
+  CANCELLED
+}
+
+enum PaymentType {
+  RENT
+  INVESTMENT
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
+}
+
+enum WithdrawalMethod {
+  BANK_TRANSFER
+  BKASH
+  NAGAD
+  ROCKET
+}
+
+enum NotificationType {
+  WITHDRAWAL_APPROVED
+  WITHDRAWAL_REJECTED
+  WITHDRAWAL_PROCESSED
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  GENERAL
+}
+
+model Payment {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @map("user_id") @db.Uuid
+  tranId         String        @unique @map("tran_id") @db.VarChar(100)
+  valId          String?       @map("val_id") @db.VarChar(100)
+  amount         Decimal       @db.Decimal(12, 2)
+  currency       String        @default("BDT") @db.VarChar(10)
+  paymentType    PaymentType   @map("payment_type")
+  status         PaymentStatus @default(PENDING)
+  gatewayPageUrl String?       @map("gateway_page_url") @db.Text
+  cardType       String?       @map("card_type") @db.VarChar(100)
+  bankTranId     String?       @map("bank_tran_id") @db.VarChar(100)
+  metadata       Json?
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model ProducerBalance {
+  id                String   @id @default(uuid()) @db.Uuid
+  producerId        String   @unique @map("producer_id") @db.Uuid
+  totalEarnings     Decimal  @default(0.00) @map("total_earnings") @db.Decimal(12, 2)
+  availableBalance  Decimal  @default(0.00) @map("available_balance") @db.Decimal(12, 2)
+  pendingWithdrawal Decimal  @default(0.00) @map("pending_withdrawal") @db.Decimal(12, 2)
+  totalWithdrawn    Decimal  @default(0.00) @map("total_withdrawn") @db.Decimal(12, 2)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  producer User @relation(fields: [producerId], references: [id], onDelete: Cascade)
+
+  @@map("producer_balances")
+}
+
+model WithdrawalRequest {
+  id             String           @id @default(uuid()) @db.Uuid
+  producerId     String           @map("producer_id") @db.Uuid
+  amount         Decimal          @db.Decimal(12, 2)
+  method         WithdrawalMethod
+  accountDetails Json             @map("account_details")
+  status         WithdrawalStatus @default(PENDING)
+  adminNote      String?          @map("admin_note") @db.Text
+  reviewedById   String?          @map("reviewed_by_id") @db.Uuid
+  reviewedAt     DateTime?        @map("reviewed_at") @db.Timestamptz(6)
+  transactionRef String?          @map("transaction_ref") @db.VarChar(100)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  producer   User  @relation("ProducerWithdrawals", fields: [producerId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("AdminReviewedWithdrawals", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@map("withdrawal_requests")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  title     String           @db.VarChar(255)
+  message   String           @db.Text
+  type      NotificationType @default(GENERAL)
+  isRead    Boolean          @default(false) @map("is_read")
+  metadata  Json?
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
 }
 
 model Listing {

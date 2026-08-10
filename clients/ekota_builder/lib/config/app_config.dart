@@ -5,7 +5,7 @@ class AppConfig {
     return dotenv.env['API_BASE_URL'] ??
         const String.fromEnvironment(
           'API_BASE_URL',
-          defaultValue: 'http://192.168.0.237:5000/api',
+          defaultValue: 'http://localhost:5000/api',
         );
   }
 }

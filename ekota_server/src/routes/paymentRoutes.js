@@ -17,4 +17,9 @@ router.get('/my', paymentController.getUserPayments);
 router.get('/admin/all', paymentController.getAllPayments);
 router.get('/:id', paymentController.getPaymentById);
 
+// Admin Validation & Rejection Routes
+router.patch('/:id/validate', paymentController.adminValidatePayment);
+router.patch('/:id/approve', paymentController.adminValidatePayment);
+router.patch('/:id/reject', paymentController.adminRejectPayment);
+
 module.exports = router;

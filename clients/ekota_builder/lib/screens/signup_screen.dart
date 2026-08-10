@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/api_client.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -33,14 +35,24 @@ class _SignupScreenState extends State<SignupScreen> {
         'role': 'PRODUCER',
       });
 
+      final payload = response as Map<String, dynamic>;
       if (!mounted) return;
-      
-      // Navigate to OTP verification screen passing the email
-      Navigator.pushReplacementNamed(
-        context,
-        '/verify-otp',
-        arguments: {'email': _emailController.text.trim(), 'type': 'registration'},
-      );
+
+      if (payload.containsKey('token') && payload.containsKey('user')) {
+        await context.read<AuthProvider>().saveSession(
+          userId: payload['user']['id'].toString(),
+          role: (payload['user']['role'] as String).toLowerCase(),
+          name: payload['user']['fullName']?.toString() ?? payload['user']['email'].toString(),
+          jwt: payload['token'].toString(),
+        );
+        if (!mounted) return;
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account created successfully! Please sign in.')),
+        );
+        Navigator.pop(context);
+      }
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {

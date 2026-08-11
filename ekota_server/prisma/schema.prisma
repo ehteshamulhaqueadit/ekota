@@ -29,6 +29,30 @@ enum CampaignStatus {
   DELIVERED
 }
 
+enum StorageLocation {
+  HOME
+  WAREHOUSE
+}
+
+enum RentalStatus {
+  AVAILABLE
+  RENTED
+  RETURNED
+}
+
+enum VoteType {
+  INCREASE
+  DECREASE
+  HOLD
+}
+
+enum ProposalStatus {
+  ACTIVE
+  PASSED
+  REJECTED
+  EXPIRED
+}
+
 model User {
   id              String    @id @default(uuid()) @db.Uuid
   email           String    @unique @db.VarChar(255)
@@ -41,18 +65,23 @@ model User {
   blockedReason   String?   @map("blocked_reason")
   kycStatus       KycStatus @default(UNVERIFIED) @map("kyc_status")
   diditSessionId  String?   @map("didit_session_id") @db.VarChar(255)
+  walletBalance   Decimal   @default(0.00) @map("wallet_balance") @db.Decimal(18, 8)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
-  listings            Listing[]
-  comments            Comment[]
-  reviews             Review[]
-  payments            Payment[]
-  producerBalance     ProducerBalance?
-  withdrawalRequests  WithdrawalRequest[] @relation("ProducerWithdrawals")
-  reviewedWithdrawals WithdrawalRequest[] @relation("AdminReviewedWithdrawals")
-  notifications       Notification[]
+  listings              Listing[]
+  comments              Comment[]
+  reviews               Review[]
+  payments              Payment[]
+  producerBalance       ProducerBalance?
+  withdrawalRequests    WithdrawalRequest[] @relation("ProducerWithdrawals")
+  reviewedWithdrawals   WithdrawalRequest[] @relation("AdminReviewedWithdrawals")
+  notifications         Notification[]
+  investments           Investment[]
+  rentals               Rental[]
+  rentPriceVotes        RentPriceVote[]
+  locationSubscriptions LocationSubscription[]
 
   @@map("users")
 }
@@ -175,7 +204,7 @@ model Notification {
 }
 
 model Listing {
-  id                 String   @id @default(uuid()) @db.Uuid
+  id                 String          @id @default(uuid()) @db.Uuid
   assetName          String
   category           String
   fundingTarget      Float
@@ -184,26 +213,41 @@ model Listing {
   specifications     String?
   imageUrls          String[]
   videoUrls          String[]
-  productionTimeType String   // 'instant', 'scheduled'
+  productionTimeType String          // 'instant', 'scheduled'
   productionDays     Int?
-  
+
+  // Physical attributes (for warehouse fee calculation)
+  weightKg           Float?          @map("weight_kg")
+  sizeCubicCm        Float?          @map("size_cubic_cm")
+  dimensions         String?         // e.g. "120x60x80 cm"
+
+  // Investment tracking
+  currentFunded      Float           @default(0) @map("current_funded")
+  storageLocation    StorageLocation @default(HOME) @map("storage_location")
+  isDelivered        Boolean         @default(false) @map("is_delivered")
+
   // Statuses
-  status             String   @default("active")
-  campaignStatus     String   @default("funding")
-  
+  status             String          @default("active")
+  campaignStatus     String          @default("funding")
+
   // Derived / computed fields
-  upvotes            Int      @default(0)
-  downvotes          Int      @default(0)
-  
-  producerId         String   @db.Uuid
-  producer           User     @relation(fields: [producerId], references: [id])
-  
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  upvotes            Int             @default(0)
+  downvotes          Int             @default(0)
+
+  producerId         String          @db.Uuid
+  producer           User            @relation(fields: [producerId], references: [id])
+
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   // Relations
   comments           Comment[]
   reviews            Review[]
+  investments        Investment[]
+  rentalPoolItem     RentalPoolItem?
+  warehouseStorage   WarehouseStorage?
+  productLocation    ProductLocation?
+  rentPriceProposals RentPriceProposal[]
 }
 
 model Comment {
@@ -226,4 +270,128 @@ model Review {
   authorId   String   @db.Uuid
   author     User     @relation(fields: [authorId], references: [id])
   createdAt  DateTime @default(now())
+}
+
+// ─── Investment & Rental Ecosystem ──────────────────────────────────────────
+
+model Investment {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  listingId       String   @map("listing_id") @db.Uuid
+  amount          Float
+  sharePercentage Float    @map("share_percentage")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listingId])
+  @@map("investments")
+}
+
+model RentalPoolItem {
+  id               String       @id @default(uuid()) @db.Uuid
+  listingId        String       @unique @map("listing_id") @db.Uuid
+  currentRentPrice Float        @map("current_rent_price")
+  status           RentalStatus @default(AVAILABLE)
+  listedAt         DateTime     @default(now()) @map("listed_at") @db.Timestamptz(6)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  listing Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  rentals Rental[]
+
+  @@map("rental_pool_items")
+}
+
+model Rental {
+  id             String    @id @default(uuid()) @db.Uuid
+  renterId       String    @map("renter_id") @db.Uuid
+  poolItemId     String    @map("pool_item_id") @db.Uuid
+  startDate      DateTime  @map("start_date") @db.Timestamptz(6)
+  endDate        DateTime? @map("end_date") @db.Timestamptz(6)
+  dailyRate      Float     @map("daily_rate")
+  totalCost      Float?    @map("total_cost")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  renter   User           @relation(fields: [renterId], references: [id], onDelete: Cascade)
+  poolItem RentalPoolItem @relation(fields: [poolItemId], references: [id], onDelete: Cascade)
+
+  @@map("rentals")
+}
+
+model RentPriceProposal {
+  id             String         @id @default(uuid()) @db.Uuid
+  listingId      String         @map("listing_id") @db.Uuid
+  proposedPrice  Float          @map("proposed_price")
+  reason         String?
+  status         ProposalStatus @default(ACTIVE)
+  proposedById   String         @map("proposed_by_id") @db.Uuid
+  expiresAt      DateTime       @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  listing Listing          @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  votes   RentPriceVote[]
+
+  @@map("rent_price_proposals")
+}
+
+model RentPriceVote {
+  id         String   @id @default(uuid()) @db.Uuid
+  proposalId String   @map("proposal_id") @db.Uuid
+  voterId    String   @map("voter_id") @db.Uuid
+  voteType   VoteType @map("vote_type")
+  weight     Float    // The voter's share percentage at time of voting
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  proposal RentPriceProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  voter    User              @relation(fields: [voterId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, voterId])
+  @@map("rent_price_votes")
+}
+
+model WarehouseStorage {
+  id              String   @id @default(uuid()) @db.Uuid
+  listingId       String   @unique @map("listing_id") @db.Uuid
+  monthlyFee      Float    @map("monthly_fee")
+  isActive        Boolean  @default(true) @map("is_active")
+  storedAt        DateTime @default(now()) @map("stored_at") @db.Timestamptz(6)
+  lastFeePaidAt   DateTime @default(now()) @map("last_fee_paid_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("warehouse_storage")
+}
+
+model ProductLocation {
+  id        String   @id @default(uuid()) @db.Uuid
+  listingId String   @unique @map("listing_id") @db.Uuid
+  latitude  Float
+  longitude Float
+  address   String?
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("product_locations")
+}
+
+model LocationSubscription {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  listingId   String   @map("listing_id") @db.Uuid
+  monthlyFee  Float    @map("monthly_fee")
+  isActive    Boolean  @default(true) @map("is_active")
+  subscribedAt DateTime @default(now()) @map("subscribed_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listingId])
+  @@map("location_subscriptions")
 }

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/login_screen.dart';
+import 'screens/public_home_screen.dart';
+
+export 'screens/public_home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,6 +49,11 @@ class _EkotaPublicAppState extends State<EkotaPublicApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Ekota Public',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6C63FF)),
+        useMaterial3: true,
+        fontFamily: 'Roboto',
+      ),
       home: _isLoading
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : _isLoggedIn
@@ -54,3 +62,4 @@ class _EkotaPublicAppState extends State<EkotaPublicApp> {
     );
   }
 }
+

@@ -102,6 +102,30 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 32),
                         if (stats != null) _statGrid(stats),
+                        const SizedBox(height: 24),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Quick Actions',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(child: _actionCard(
+                              icon: Icons.trending_up,
+                              label: 'Funding\nProgress',
+                              color: Colors.blue,
+                              onTap: () => Navigator.pushNamed(context, '/producer/funding'),
+                            )),
+                            const SizedBox(width: 12),
+                            Expanded(child: _actionCard(
+                              icon: Icons.local_shipping,
+                              label: 'Confirm\nOrders',
+                              color: Colors.green,
+                              onTap: () => Navigator.pushNamed(context, '/producer/confirm-orders'),
+                            )),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -116,6 +140,34 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButtonLocation:
           FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: const AppBottomNav(currentIndex: 0),
+    );
+  }
+
+  Widget _actionCard({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 8),
+            Text(label, textAlign: TextAlign.center,
+                style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
+          ],
+        ),
+      ),
     );
   }
 

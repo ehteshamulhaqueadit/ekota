@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import 'payment_screen.dart';
+import 'public_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -124,14 +125,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class PublicHomeScreen extends StatelessWidget {
-  const PublicHomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const PaymentScreen();
-  }
-}
 
 class PublicSignupScreen extends StatefulWidget {
   const PublicSignupScreen({super.key});

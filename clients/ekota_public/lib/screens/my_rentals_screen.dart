@@ -46,8 +46,13 @@ class _MyRentalsScreenState extends State<MyRentalsScreen>
   }
 
   Future<void> _returnProduct(Map<String, dynamic> rental) async {
-    final poolItemId = rental['poolItemId'] ?? rental['poolItem']?['id'];
-    if (poolItemId == null) return;
+    final poolItemId = rental['poolItemId']?.toString();
+    if (poolItemId == null || poolItemId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to return: rental data is missing. Please restart the app.')),
+      );
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -70,6 +75,14 @@ class _MyRentalsScreenState extends State<MyRentalsScreen>
     try {
       final result = await PublicRentalService.returnProduct(poolItemId);
       if (!mounted) return;
+      
+      if (result['error'] != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['error']), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      
       final totalCost = result['totalCost'] ?? 0;
       final daysRented = result['daysRented'] ?? 1;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -228,6 +228,30 @@ async function castVote(req, res) {
           });
         }
       });
+      
+      if (newStatus === 'PASSED') {
+        try {
+          const listing = await prisma.listing.findUnique({ where: { id: proposal.listingId } });
+          const watchers = await prisma.watchlist.findMany({
+            where: {
+              listingId: proposal.listingId,
+              alertOnPriceChange: true
+            },
+            include: { user: true }
+          });
+          const { sendWatchlistAlert } = require('../services/notificationService');
+          for (const watch of watchers) {
+            await sendWatchlistAlert(
+              watch.user,
+              listing,
+              'PRICE_CHANGE',
+              `The rent price for "${listing.assetName}" has been updated to ${proposal.proposedPrice}.`
+            );
+          }
+        } catch (err) {
+          console.error('Failed to send watchlist notifications:', err);
+        }
+      }
     }
 
     res.status(201).json({

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "824434406405",
+    "project_id": "ekota-60085",
+    "storage_bucket": "ekota-60085.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:824434406405:android:0138007d09b16b7b1b986c",
+        "android_client_info": {
+          "package_name": "com.example.ekota_public"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbqbn7bce749I35gY21V2G7paA3pqqAkw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

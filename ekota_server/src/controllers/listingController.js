@@ -111,32 +111,98 @@ async function createListing(req, res) {
   }
 }
 
-// Get a specific listing by ID
+// Get a specific listing by ID (enhanced with investment + rental data)
 async function getListingById(req, res) {
-    // Print the entire request object (very verbose!)
-  console.log(req);
-
-  // Print request body (most common for POST/PUT)
-  console.log('Body:', req.body);
-
-  // Print query parameters (?id=123&name=test)
-  console.log('Query:', req.query);
-
-  // Print route parameters (/example/:id)
-  console.log('Params:', req.params);
-
-  // Print headers
-  console.log('Headers:', req.headers);
-
-  // Print method and URL
-  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id } = req.params;
+  try {
+    const listing = await prisma.listing.findUnique({
+      where: { id },
+      include: {
+        producer: { select: { id: true, fullName: true } },
+        investments: {
+          select: {
+            id: true,
+            userId: true,
+            amount: true,
+            sharePercentage: true,
+            user: { select: { fullName: true } }
+          }
+        },
+        rentalPoolItem: {
+          select: {
+            id: true,
+            currentRentPrice: true,
+            status: true
+          }
+        },
+        warehouseStorage: {
+          select: {
+            id: true,
+            monthlyFee: true,
+            isActive: true,
+            storedAt: true
+          }
+        },
+        productLocation: {
+          select: {
+            latitude: true,
+            longitude: true,
+            address: true,
+            updatedAt: true
+          }
+        }
+      }
+    });
+    if (!listing) return res.status(404).json({ error: 'Listing not found' });
+
+    res.json({
+      ...listing,
+      investorCount: listing.investments.length,
+      fundingPercentage: listing.fundingTarget > 0
+        ? (listing.currentFunded / listing.fundingTarget) * 100
+        : 0
+    });
+  } catch (error) {
+    console.error('Error fetching listing:', error);
+    res.status(500).json({ error: 'Failed to fetch listing' });
+  }
+}
+
+// POST /api/listings/:id/confirm-delivery - Producer confirms order delivery
+async function confirmDelivery(req, res) {
+  const producerId = req.user.id;
+  const { id } = req.params;
+
   try {
     const listing = await prisma.listing.findUnique({ where: { id } });
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
-    res.json({ ...listing, investorCount: 0 });
+
+    if (listing.producerId !== producerId) {
+      return res.status(403).json({ error: 'Only the producer can confirm delivery' });
+    }
+
+    const validStatuses = ['FULLY_FUNDED', 'IN_PRODUCTION'];
+    if (!validStatuses.includes(listing.campaignStatus.toUpperCase())) {
+      return res.status(400).json({
+        error: `Cannot confirm delivery. Current status: ${listing.campaignStatus}. Must be FULLY_FUNDED or IN_PRODUCTION.`
+      });
+    }
+
+    const updated = await prisma.listing.update({
+      where: { id },
+      data: {
+        campaignStatus: 'DELIVERED',
+        isDelivered: true
+      }
+    });
+
+    res.json({
+      listing: updated,
+      message: 'Order confirmed and marked as delivered'
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch listing' });
+    console.error('Error confirming delivery:', error);
+    res.status(500).json({ error: 'Failed to confirm delivery' });
   }
 }
 
@@ -409,6 +475,7 @@ module.exports = {
   getProducerListings,
   createListing,
   getListingById,
+  confirmDelivery,
   voteListing,
   getComments,
   postComment,

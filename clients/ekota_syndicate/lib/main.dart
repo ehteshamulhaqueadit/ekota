@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/login_screen.dart';
+import 'screens/syndicate_home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +39,10 @@ class _EkotaSyndicateAppState extends State<EkotaSyndicateApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Ekota Syndicate',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00D2FF)),
+        useMaterial3: true,
+      ),
       home: _isLoading
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : _isLoggedIn
@@ -46,3 +51,4 @@ class _EkotaSyndicateAppState extends State<EkotaSyndicateApp> {
     );
   }
 }
+

@@ -6,6 +6,7 @@ const {
   getProducerListings,
   createListing,
   getListingById,
+  confirmDelivery,
   voteListing,
   getComments,
   postComment,
@@ -17,12 +18,13 @@ const {
 
 const router = express.Router();
 
+router.get('/producers/listings', authenticate, getProducerListings);
 router.get('/producers/:producerId/stats', authenticate, getProducerStats);
 router.get('/producers/:producerId/listings', authenticate, getProducerListings);
-router.get('/producers/listings', authenticate, getProducerListings);
 
 router.post('/listings', authenticate, createListing);
 router.get('/listings/:id', authenticate, getListingById);
+router.post('/listings/:id/confirm-delivery', authenticate, confirmDelivery);
 router.post('/listings/:id/vote', authenticate, voteListing);
 
 router.get('/listings/:id/comments', authenticate, getComments);

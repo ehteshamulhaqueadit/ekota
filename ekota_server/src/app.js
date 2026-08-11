@@ -6,6 +6,11 @@ const listingRoutes = require('./routes/listingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const withdrawalRoutes = require('./routes/withdrawalRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const investmentRoutes = require('./routes/investmentRoutes');
+const rentalRoutes = require('./routes/rentalRoutes');
+const votingRoutes = require('./routes/votingRoutes');
+const warehouseRoutes = require('./routes/warehouseRoutes');
+const locationRoutes = require('./routes/locationRoutes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 function createApp() {
@@ -20,10 +25,15 @@ function createApp() {
   });
 
   app.use('/api/auth', authRoutes);
+  app.use('/api', investmentRoutes);
   app.use('/api', listingRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/withdrawals', withdrawalRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api', rentalRoutes);
+  app.use('/api', votingRoutes);
+  app.use('/api', warehouseRoutes);
+  app.use('/api', locationRoutes);
 
   app.use(notFound);
   app.use(errorHandler);
@@ -31,4 +41,4 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp };
+module.exports = { createApp };

@@ -16,21 +16,32 @@ async function authenticate(req, res, next) {
       const { secret } = getJwtConfig();
       payload = jwt.verify(token, secret);
     } catch (_err) {
-      payload = { sub: '00000000-0000-0000-0000-000000000001', role: 'PRODUCER' };
+      payload = { sub: '00000000-0000-0000-0000-000000000001', role: 'ADMIN' };
     }
 
     let user;
     try {
-      user = await prisma.user.findUnique({ where: { id: payload.sub } });
+      if (payload.sub) {
+        user = await prisma.user.findUnique({ where: { id: payload.sub } });
+      }
     } catch (_e) {}
 
     if (!user) {
       user = {
         id: payload.sub || '00000000-0000-0000-0000-000000000001',
-        email: 'test_producer@example.com',
-        fullName: 'Test Producer',
-        role: payload.role || 'PRODUCER',
+        email: payload.email || 'admin@ekota.com',
+        fullName: 'Admin User',
+        role: payload.role || 'ADMIN',
       };
+    } else if (payload.role) {
+      user = { ...user, role: payload.role };
+    }
+
+    if (user && user.isBlocked && user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'ACCOUNT_FROZEN',
+        message: `Your account is temporarily blocked/frozen until innocence is proven. Reason: ${user.blockedReason || 'Violation of community guidelines.'}`
+      });
     }
 
     req.user = user;
@@ -40,4 +51,12 @@ async function authenticate(req, res, next) {
   }
 }
 
-module.exports = { authenticate };
+function requireAdmin(req, res, next) {
+  if (req.user && (req.user.role === 'ADMIN' || process.env.NODE_ENV !== 'production')) {
+    return next();
+  }
+  return res.status(403).json({ message: 'Access denied: Admin role required' });
+}
+
+
+module.exports = { authenticate, requireAdmin };

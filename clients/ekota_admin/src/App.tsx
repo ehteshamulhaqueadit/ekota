@@ -7,9 +7,11 @@ import type { AuthSession } from './types/auth';
 
 import { WithdrawalManagement } from './components/WithdrawalManagement';
 import { PaymentAuditLog } from './components/PaymentAuditLog';
+import { PostManagement } from './components/PostManagement';
+import { UserManagement } from './components/UserManagement';
 
 function Dashboard({ onLogout }: { onLogout: () => void }) {
-  const [currentTab, setCurrentTab] = useState<'overview' | 'withdrawals' | 'payments'>('overview');
+  const [currentTab, setCurrentTab] = useState<'overview' | 'posts' | 'users' | 'withdrawals' | 'payments'>('overview');
 
   return (
     <div className="admin-layout">
@@ -25,6 +27,22 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
             style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
           >
             Dashboard Overview
+          </button>
+          <button
+            type="button"
+            className={`nav-item ${currentTab === 'posts' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('posts')}
+            style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            Producer Posts
+          </button>
+          <button
+            type="button"
+            className={`nav-item ${currentTab === 'users' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('users')}
+            style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            User Accounts
           </button>
           <button
             type="button"
@@ -49,6 +67,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         <header className="topbar">
           <h1 className="topbar-title">
             {currentTab === 'overview' && 'Dashboard Overview'}
+            {currentTab === 'posts' && 'Producer Post Management'}
+            {currentTab === 'users' && 'User Account Management'}
             {currentTab === 'withdrawals' && 'Withdrawal Request Management'}
             {currentTab === 'payments' && 'Payment Audit Log'}
           </h1>
@@ -58,8 +78,11 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           </div>
         </header>
 
+        {currentTab === 'posts' && <PostManagement />}
+        {currentTab === 'users' && <UserManagement />}
         {currentTab === 'withdrawals' && <WithdrawalManagement />}
         {currentTab === 'payments' && <PaymentAuditLog />}
+
 
         {currentTab === 'overview' && (
           <div className="dashboard-scroll">

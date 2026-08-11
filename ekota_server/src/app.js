@@ -6,6 +6,7 @@ const listingRoutes = require('./routes/listingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const withdrawalRoutes = require('./routes/withdrawalRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 function createApp() {
@@ -20,10 +21,12 @@ function createApp() {
   });
 
   app.use('/api/auth', authRoutes);
+  app.use('/api/admin', adminRoutes);
   app.use('/api', listingRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/withdrawals', withdrawalRoutes);
   app.use('/api/notifications', notificationRoutes);
+
 
   app.use(notFound);
   app.use(errorHandler);

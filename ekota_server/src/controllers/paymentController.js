@@ -1,11 +1,11 @@
 const prisma = require('../config/prisma');
 const sslcommerzService = require('../services/sslcommerzService');
 
-// Live in-memory store for dev / fallback payments
+// Live in-memory store initialized with valid PostgreSQL UUIDs matching database seed
 let livePayments = [
   {
-    id: 'pay_demo_01',
-    userId: '00000000-0000-0000-0000-000000000001',
+    id: '40000000-0000-0000-0000-000000000001',
+    userId: '10000000-0000-0000-0000-000000000003',
     tranId: 'EKOTA-PAY-1786331900-101',
     amount: 15000,
     currency: 'BDT',
@@ -13,11 +13,11 @@ let livePayments = [
     status: 'PENDING',
     cardType: 'SSLCommerz Gateway',
     createdAt: new Date().toISOString(),
-    user: { fullName: 'Renter Member', email: 'renter@ekota.com', role: 'RENTER' },
+    user: { fullName: 'Rahim Transport', email: 'renter_rahim@ekota.com', role: 'RENTER' },
   },
   {
-    id: 'pay_demo_02',
-    userId: '00000000-0000-0000-0000-000000000002',
+    id: '40000000-0000-0000-0000-000000000002',
+    userId: '10000000-0000-0000-0000-000000000002',
     tranId: 'EKOTA-PAY-1786331950-202',
     amount: 50000,
     currency: 'BDT',
@@ -25,9 +25,10 @@ let livePayments = [
     status: 'PENDING',
     cardType: 'SSLCommerz Gateway',
     createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    user: { fullName: 'Investor Member', email: 'investor@ekota.com', role: 'INVESTOR' },
+    user: { fullName: 'Tariq Rahman', email: 'investor_tariq@ekota.com', role: 'INVESTOR' },
   },
 ];
+
 
 /**
  * Initiate SSLCommerz payment session for Renters & Investors

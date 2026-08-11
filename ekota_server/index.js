@@ -1,12 +1,14 @@
 require('dotenv').config();
 
 const { createApp } = require('./src/app');
+const { seedDatabaseIfEmpty } = require('./src/utils/seedDatabase');
 
 const app = createApp();
 const port = process.env.PORT || 5000;
 
 const server = app.listen(port, () => {
   console.log(`Ekota backend running on port ${port}`);
+  seedDatabaseIfEmpty();
 });
 
 server.on('error', (error) => {
@@ -16,4 +18,4 @@ server.on('error', (error) => {
     console.error('Server error:', error);
   }
   process.exit(1);
-});
+});

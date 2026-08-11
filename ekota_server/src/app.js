@@ -3,6 +3,9 @@ const cors = require('cors');
 
 const authRoutes = require('./routes/authRoutes');
 const listingRoutes = require('./routes/listingRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const withdrawalRoutes = require('./routes/withdrawalRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 function createApp() {
@@ -10,6 +13,7 @@ function createApp() {
 
   app.use(cors());
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'ekota-backend' });
@@ -17,6 +21,9 @@ function createApp() {
 
   app.use('/api/auth', authRoutes);
   app.use('/api', listingRoutes);
+  app.use('/api/payments', paymentRoutes);
+  app.use('/api/withdrawals', withdrawalRoutes);
+  app.use('/api/notifications', notificationRoutes);
 
   app.use(notFound);
   app.use(errorHandler);

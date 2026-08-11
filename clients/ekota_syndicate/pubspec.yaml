@@ -16,6 +16,7 @@ dependencies:
   flutter_dotenv: ^5.1.2
   http: ^1.6.0
   shared_preferences: ^2.5.5
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

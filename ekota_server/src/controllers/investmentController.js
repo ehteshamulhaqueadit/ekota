@@ -89,6 +89,30 @@ async function createInvestment(req, res) {
         fundingPercentage: (result.updatedListing.currentFunded / result.updatedListing.fundingTarget) * 100
       }
     });
+
+    if (isFullyFunded && listing.campaignStatus !== 'FULLY_FUNDED') {
+      try {
+        const watchers = await prisma.watchlist.findMany({
+          where: {
+            listingId,
+            alertOnFunded: true
+          },
+          include: { user: true }
+        });
+        const { sendWatchlistAlert } = require('../services/notificationService');
+        for (const watch of watchers) {
+          await sendWatchlistAlert(
+            watch.user,
+            result.updatedListing,
+            'FUNDED',
+            `The product "${result.updatedListing.assetName}" has reached 100% funding!`
+          );
+        }
+      } catch (err) {
+        console.error('Failed to send watchlist notifications:', err);
+      }
+    }
+
   } catch (error) {
     console.error('Error creating investment:', error);
     res.status(500).json({ error: 'Failed to create investment' });

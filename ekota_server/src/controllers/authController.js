@@ -299,6 +299,19 @@ async function me(req, res) {
   return res.json({ user: sanitizeUser(req.user) });
 }
 
+async function updateFcmToken(req, res, next) {
+  try {
+    const { fcmToken } = req.body;
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { fcmToken }
+    });
+    res.json({ message: 'FCM token updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   signup,
   login,
@@ -306,5 +319,6 @@ module.exports = {
   confirmRegistration,
   requestPasswordReset,
   verifyPasswordResetOtp,
-  me
+  me,
+  updateFcmToken
 };

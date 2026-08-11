@@ -57,9 +57,20 @@ async function listInRentalPool(req, res) {
 
 // GET /api/rental-pool - List all available products for rent
 async function getRentalPool(req, res) {
+  const currentUserId = req.user?.id;
+
   try {
+    // Find pool item IDs that are actively rented by the current user
+    let myActiveRentalPoolItemIds = new Set();
+    if (currentUserId) {
+      const myActiveRentals = await prisma.rental.findMany({
+        where: { renterId: currentUserId, isActive: true },
+        select: { poolItemId: true }
+      });
+      myActiveRentalPoolItemIds = new Set(myActiveRentals.map(r => r.poolItemId));
+    }
+
     const poolItems = await prisma.rentalPoolItem.findMany({
-      where: { status: 'AVAILABLE' },
       include: {
         listing: {
           select: {
@@ -76,7 +87,10 @@ async function getRentalPool(req, res) {
       orderBy: { listedAt: 'desc' }
     });
 
-    const formatted = poolItems.map(item => ({
+    // Exclude items actively rented by the current user
+    const filtered = poolItems.filter(item => !myActiveRentalPoolItemIds.has(item.id));
+
+    const formatted = filtered.map(item => ({
       id: item.id,
       listingId: item.listingId,
       currentRentPrice: item.currentRentPrice,
@@ -184,6 +198,29 @@ async function returnProduct(req, res) {
       return { updatedRental, updatedPoolItem };
     });
 
+    // Notify watchers
+    try {
+      const watchers = await prisma.watchlist.findMany({
+        where: {
+          listingId: result.updatedPoolItem.listingId,
+          alertOnAvailable: true
+        },
+        include: { user: true, listing: true }
+      });
+      const { sendWatchlistAlert } = require('../services/notificationService');
+      
+      for (const watch of watchers) {
+        await sendWatchlistAlert(
+          watch.user, 
+          watch.listing, 
+          'AVAILABLE', 
+          `The product "${watch.listing.assetName}" is now available for rent!`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to send watchlist notifications:', err);
+    }
+
     res.json({
       rental: result.updatedRental,
       daysRented,
@@ -223,6 +260,7 @@ async function getMyRentals(req, res) {
 
     const formatted = rentals.map(r => ({
       id: r.id,
+      poolItemId: r.poolItem.id,
       startDate: r.startDate,
       endDate: r.endDate,
       dailyRate: r.dailyRate,

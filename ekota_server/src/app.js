@@ -11,6 +11,7 @@ const rentalRoutes = require('./routes/rentalRoutes');
 const votingRoutes = require('./routes/votingRoutes');
 const warehouseRoutes = require('./routes/warehouseRoutes');
 const locationRoutes = require('./routes/locationRoutes');
+const watchlistRoutes = require('./routes/watchlistRoutes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 function createApp() {
@@ -34,6 +35,7 @@ function createApp() {
   app.use('/api', votingRoutes);
   app.use('/api', warehouseRoutes);
   app.use('/api', locationRoutes);
+  app.use('/api', watchlistRoutes);
 
   app.use(notFound);
   app.use(errorHandler);

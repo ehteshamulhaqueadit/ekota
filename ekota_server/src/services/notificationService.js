@@ -5,7 +5,7 @@ const path = require('path');
 // Initialize Firebase Admin SDK with the service account
 if (!admin.apps.length) {
   try {
-    const serviceAccount = require(path.join(__dirname, '../../firebase/ekota-60085-firebase-adminsdk-fbsvc-515607e95a.json'));
+    const serviceAccount = require(path.join(__dirname, '../../firebase/ekota-firebase-key.json'));
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });

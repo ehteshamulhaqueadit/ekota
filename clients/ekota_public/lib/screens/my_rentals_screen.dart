@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../services/rental_service.dart';
 import 'location_sharing_screen.dart';
+import 'rental_portal_screen.dart';
 
 class MyRentalsScreen extends StatefulWidget {
   const MyRentalsScreen({super.key});
@@ -54,17 +56,22 @@ class _MyRentalsScreenState extends State<MyRentalsScreen>
       return;
     }
 
+    // Confirm the return request. The server generates a NEW return gate-pass
+    // QR that the warehouse scans to finally complete the return.
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Return Product'),
-        content: const Text('Are you sure you want to return this product? Final cost will be calculated based on rental duration.'),
+        content: const Text(
+          'Requesting a return will generate a NEW return gate-pass QR. '
+          'Show this QR at the warehouse so they can verify and complete your return.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Return', style: TextStyle(color: Colors.white)),
+            child: const Text('Request Return', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -75,30 +82,105 @@ class _MyRentalsScreenState extends State<MyRentalsScreen>
     try {
       final result = await PublicRentalService.returnProduct(poolItemId);
       if (!mounted) return;
-      
+
       if (result['error'] != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result['error']), backgroundColor: Colors.red),
         );
         return;
       }
-      
-      final totalCost = result['totalCost'] ?? 0;
-      final daysRented = result['daysRented'] ?? 1;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Returned! ${daysRented}d × rate = ৳${totalCost.toStringAsFixed(0)} total'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+
+      final returnCode = (result['returnGatePassCode'] ?? '').toString();
+      if (returnCode.isNotEmpty) {
+        await _showReturnQr(returnCode);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Return requested! Show the new QR at the warehouse to complete it.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
       _loadRentals();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+      // The request may have timed out even though the server already processed
+      // the return (the response was lost). Refresh to verify the real state
+      // instead of telling the user it failed when it actually succeeded.
+      List<Map<String, dynamic>> rentals = [];
+      try {
+        rentals = await PublicRentalService.getMyRentals();
+      } catch (_) {
+        // Keep the empty list below — fall back to showing the error.
+      }
+      if (!mounted) return;
+
+      final stillActive = rentals.any(
+        (r) => r['poolItemId']?.toString() == poolItemId && r['isActive'] == true,
       );
+
+      if (stillActive) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Product returned successfully.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadRentals();
+      }
     }
+  }
+
+  /// Show the NEW return gate-pass QR after a return request, with
+  /// instructions to present it at the warehouse.
+  Future<void> _showReturnQr(String returnCode) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.qr_code_2, color: Color(0xFFDC2626)),
+            SizedBox(width: 8),
+            Text('Return Gate-Pass'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Return requested! Show this QR at the warehouse to complete your return.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            QrImageView(
+              data: returnCode,
+              version: QrVersions.auto,
+              size: 200,
+              backgroundColor: Colors.white,
+              eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: Color(0xFF1E1B4B)),
+              dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square, color: Color(0xFF1E1B4B)),
+            ),
+            const SizedBox(height: 12),
+            SelectableText(
+              returnCode,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[500], fontSize: 11, letterSpacing: 0.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -161,7 +243,6 @@ class _MyRentalsScreenState extends State<MyRentalsScreen>
         final listing = rental['listing'] ?? {};
         final imageUrls = List<String>.from(listing['imageUrls'] ?? []);
         final listingId = listing['id'];
-        final poolItemId = rental['poolItem']?['id'];
 
         // Calculate days if active
         String durationText = '';
@@ -245,40 +326,63 @@ class _MyRentalsScreenState extends State<MyRentalsScreen>
                 const Divider(height: 1),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Share location button
-                      if (listingId != null)
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => LocationSharingScreen(listingId: listingId),
+                      // Open the active rental portal (countdown + gate-pass)
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => RentalPortalScreen(rentalId: rental['id'].toString()),
+                          ),
+                        ),
+                        icon: const Icon(Icons.qr_code_2, size: 16),
+                        label: const Text('Open Rental Portal'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6C63FF),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          // Share location button
+                          if (listingId != null)
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => LocationSharingScreen(listingId: listingId),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.location_on, size: 16),
+                                label: const Text('Share Location'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF6C63FF),
+                                  side: const BorderSide(color: Color(0xFF6C63FF)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
                               ),
                             ),
-                            icon: const Icon(Icons.location_on, size: 16),
-                            label: const Text('Share Location'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF6C63FF),
-                              side: const BorderSide(color: Color(0xFF6C63FF)),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          if (listingId != null) const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _returnProduct(rental),
+                              icon: const Icon(Icons.assignment_return, size: 16),
+                              label: const Text('Return'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red[50],
+                                foregroundColor: Colors.red,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
                             ),
                           ),
-                        ),
-                      if (listingId != null) const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _returnProduct(rental),
-                          icon: const Icon(Icons.assignment_return, size: 16),
-                          label: const Text('Return'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red[50],
-                            foregroundColor: Colors.red,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                        ),
+                        ],
                       ),
                     ],
                   ),

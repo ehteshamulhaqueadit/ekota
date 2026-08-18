@@ -25,7 +25,10 @@ class RentalService {
     return jsonDecode(response.body);
   }
 
-  /// Return a rented product
+  /// Request a return for a rented product.
+  /// The server generates a NEW return gate-pass (a fresh QR, separate from
+  /// the pickup QR). The warehouse scans that return QR to verify and finally
+  /// complete the return. Returns the new `returnGatePassCode`.
   static Future<Map<String, dynamic>> returnProduct(String poolItemId) async {
     final response = await ApiClient.post('rental-pool/$poolItemId/return');
     return jsonDecode(response.body);

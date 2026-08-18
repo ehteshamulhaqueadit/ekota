@@ -42,9 +42,12 @@ export async function apiRequest(path: string, options: RequestInit = {}) {
   }
 
   if (!response.ok) {
-    const message = typeof payload === 'object' && payload && 'message' in payload
-      ? String((payload as { message?: unknown }).message)
-      : 'Request failed';
+    const message =
+      typeof payload === 'object' && payload && 'message' in payload
+        ? String((payload as { message?: unknown }).message)
+        : typeof payload === 'object' && payload && 'error' in payload
+          ? String((payload as { error?: unknown }).error)
+          : 'Request failed';
     throw new Error(message);
   }
 

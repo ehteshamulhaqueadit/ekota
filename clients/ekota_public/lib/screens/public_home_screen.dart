@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'rental_marketplace_screen.dart';
 import 'my_rentals_screen.dart';
 import 'watchlist_screen.dart';
+import 'map_explore_screen.dart';
 import 'login_screen.dart';
 
 class PublicHomeScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class _PublicHomeScreenState extends State<PublicHomeScreen> {
 
   final List<Widget> _screens = const [
     RentalMarketplaceScreen(),
+    MapExploreScreen(),
     MyRentalsScreen(),
     WatchlistScreen(),
   ];
@@ -76,6 +78,11 @@ class _PublicHomeScreenState extends State<PublicHomeScreen> {
             icon: Icon(Icons.grid_view_outlined),
             selectedIcon: Icon(Icons.grid_view, color: Color(0xFF6C63FF)),
             label: 'Marketplace',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.map_outlined),
+            selectedIcon: Icon(Icons.map, color: Color(0xFF6C63FF)),
+            label: 'Map',
           ),
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),

@@ -2,6 +2,17 @@ const prisma = require('../config/prisma');
 
 const SAMPLE_USERS = [
   {
+    id: '00000000-0000-0000-0000-000000000001',
+    email: 'admin@ekota.com',
+    passwordHash: '$2a$12$eImiTXuWVxfM37uY4JANjO5E/e0N.J3V312qW4pP1vXJ7e.',
+    fullName: 'Ekota Administrator',
+    phoneNumber: '+8801700000000',
+    role: 'ADMIN',
+    isBlocked: false,
+    blockedReason: null,
+    kycStatus: 'VERIFIED'
+  },
+  {
     id: '10000000-0000-0000-0000-000000000001',
     email: 'producer_karim@ekota.com',
     passwordHash: '$2a$12$eImiTXuWVxfM37uY4JANjO5E/e0N.J3V312qW4pP1vXJ7e.',
@@ -104,6 +115,25 @@ const SAMPLE_LISTINGS = [
   }
 ];
 
+const SAMPLE_PRODUCER_BALANCES = [
+  {
+    id: '50000000-0000-0000-0000-000000000001',
+    producerId: '10000000-0000-0000-0000-000000000001',
+    totalEarnings: 854000.00,
+    availableBalance: 245000.00,
+    pendingWithdrawal: 45000.00,
+    totalWithdrawn: 564000.00
+  },
+  {
+    id: '50000000-0000-0000-0000-000000000002',
+    producerId: '10000000-0000-0000-0000-000000000004',
+    totalEarnings: 340000.00,
+    availableBalance: 120000.00,
+    pendingWithdrawal: 0.00,
+    totalWithdrawn: 120000.00
+  }
+];
+
 const SAMPLE_WITHDRAWALS = [
   {
     id: '30000000-0000-0000-0000-000000000001',
@@ -170,7 +200,16 @@ async function seedDatabaseIfEmpty() {
       }).catch(_e => {});
     }
 
-    // 3. Seed Withdrawal Requests
+    // 3. Seed Producer Balances
+    for (const b of SAMPLE_PRODUCER_BALANCES) {
+      await prisma.producerBalance.upsert({
+        where: { producerId: b.producerId },
+        update: {},
+        create: b
+      }).catch(_e => {});
+    }
+
+    // 4. Seed Withdrawal Requests
     for (const w of SAMPLE_WITHDRAWALS) {
       await prisma.withdrawalRequest.upsert({
         where: { id: w.id },
@@ -179,7 +218,7 @@ async function seedDatabaseIfEmpty() {
       }).catch(_e => {});
     }
 
-    // 4. Seed Payments
+    // 5. Seed Payments
     for (const p of SAMPLE_PAYMENTS) {
       await prisma.payment.upsert({
         where: { id: p.id },

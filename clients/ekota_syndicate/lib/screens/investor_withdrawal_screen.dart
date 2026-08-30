@@ -103,7 +103,7 @@ class _InvestorWithdrawalScreenState extends State<InvestorWithdrawalScreen> wit
       if (result['success'] == true && result['gatewayPageUrl'] != null) {
         final url = Uri.parse(result['gatewayPageUrl']);
         if (await canLaunchUrl(url)) {
-          await launchUrl(url, mode: LaunchMode.externalApplication);
+          await launchUrl(url, mode: LaunchMode.inAppBrowserView);
         } else {
           await launchUrl(url);
         }

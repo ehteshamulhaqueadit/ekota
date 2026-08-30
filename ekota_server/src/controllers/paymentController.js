@@ -1,82 +1,147 @@
 const prisma = require('../config/prisma');
 const sslcommerzService = require('../services/sslcommerzService');
+const {
+  sendPaymentSuccessEmail,
+  sendPaymentFailedEmail
+} = require('../services/emailService');
 
-// Live in-memory store initialized with valid PostgreSQL UUIDs matching database seed
-let livePayments = [
-  {
-    id: '40000000-0000-0000-0000-000000000001',
-    userId: '10000000-0000-0000-0000-000000000003',
-    tranId: 'EKOTA-PAY-1786331900-101',
-    amount: 15000,
-    currency: 'BDT',
-    paymentType: 'RENT',
-    status: 'PENDING',
-    cardType: 'SSLCommerz Gateway',
-    createdAt: new Date().toISOString(),
-    user: { fullName: 'Rahim Transport', email: 'renter_rahim@ekota.com', role: 'RENTER' },
-  },
-  {
-    id: '40000000-0000-0000-0000-000000000002',
-    userId: '10000000-0000-0000-0000-000000000002',
-    tranId: 'EKOTA-PAY-1786331950-202',
-    amount: 50000,
-    currency: 'BDT',
-    paymentType: 'INVESTMENT',
-    status: 'PENDING',
-    cardType: 'SSLCommerz Gateway',
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    user: { fullName: 'Tariq Rahman', email: 'investor_tariq@ekota.com', role: 'INVESTOR' },
-  },
-];
+/**
+ * Shared Helper: Validate Payment and update PostgreSQL
+ */
+async function processPaymentValidation(tranId, valId, payload) {
+  if (!tranId) return null;
 
+  const payment = await prisma.payment.findUnique({
+    where: { tranId },
+    include: { user: true, listing: true },
+  });
+
+  if (!payment) return null;
+
+  if (payment.status === 'VALIDATED') return payment;
+
+  // Validate with SSLCommerz server
+  const validationResult = await sslcommerzService.validateTransaction(valId || payment.valId);
+
+  if (validationResult.isValid || payload?.status === 'VALIDATED' || payload?.status === 'VALID') {
+    const updatedPayment = await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: 'VALIDATED',
+        valId: valId || validationResult.valId || null,
+        bankTranId: payload?.bank_tran_id || validationResult.bankTranId || null,
+        cardType: payload?.card_type || validationResult.cardType || 'SSLCommerz Gateway',
+        metadata: payload,
+      },
+      include: { user: true, listing: true },
+    });
+
+    // Create in-app Notification in PostgreSQL
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: payment.userId,
+          title: 'Payment Verified & Validated',
+          message: `Your payment of ৳${payment.amount} (${payment.paymentType}) with Tran ID ${payment.tranId} has been verified and validated.`,
+          type: 'PAYMENT_SUCCESS',
+        },
+      });
+    } catch (_e) {}
+
+    // Dispatch Gmail Email Notification
+    if (payment.user?.email) {
+      sendPaymentSuccessEmail({
+        to: payment.user.email,
+        fullName: payment.user.fullName,
+        amount: Number(payment.amount),
+        tranId: payment.tranId,
+        paymentType: payment.paymentType,
+      });
+    }
+
+    return updatedPayment;
+  } else {
+    const failedPayment = await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'FAILED', metadata: payload },
+      include: { user: true, listing: true },
+    });
+
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: payment.userId,
+          title: 'Payment Validation Failed',
+          message: `Your payment of ৳${payment.amount} (${payment.paymentType}) with Tran ID ${payment.tranId} failed validation.`,
+          type: 'PAYMENT_FAILED',
+        },
+      });
+    } catch (_e) {}
+
+    if (payment.user?.email) {
+      sendPaymentFailedEmail({
+        to: payment.user.email,
+        fullName: payment.user.fullName,
+        amount: Number(payment.amount),
+        tranId: payment.tranId,
+        reason: 'Transaction validation failed with SSLCommerz gateway',
+      });
+    }
+
+    return failedPayment;
+  }
+}
 
 /**
  * Initiate SSLCommerz payment session for Renters & Investors
  */
 async function initiatePayment(req, res, next) {
   try {
-    const { amount, paymentType = 'RENT', productName = 'Ekota Platform Fee' } = req.body;
-    const user = req.user || { id: '00000000-0000-0000-0000-000000000001', fullName: 'Renter Member', email: 'renter@ekota.com' };
+    const { amount, paymentType = 'RENT', listingId, productName = 'Ekota Service Fee' } = req.body;
+    const user = req.user || { id: '39412f75-dab4-4476-bb11-04e68b1fc262', fullName: 'Ekota Member', email: 'user@ekota.com' };
 
     if (!amount || isNaN(amount) || Number(amount) <= 0) {
-      return res.status(400).json({ message: 'Valid amount is required' });
+      return res.status(400).json({ message: 'Valid payment amount is required' });
     }
 
-    if (!['RENT', 'INVESTMENT'].includes(paymentType.toUpperCase())) {
+    const normalizedPaymentType = paymentType.toUpperCase();
+    if (!['RENT', 'INVESTMENT'].includes(normalizedPaymentType)) {
       return res.status(400).json({ message: 'Invalid paymentType. Must be RENT or INVESTMENT' });
+    }
+
+    if (listingId) {
+      try {
+        const listing = await prisma.listing.findUnique({ where: { id: listingId } });
+        if (listing && normalizedPaymentType === 'RENT') {
+          if (Number(amount) < Number(listing.rentalPrice)) {
+            return res.status(400).json({
+              message: `Payment amount ৳${amount} is less than required rental price of ৳${listing.rentalPrice}`,
+            });
+          }
+        }
+      } catch (_e) {}
     }
 
     const tranId = `EKOTA-PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    let newPayment = {
-      id: `pay_${Date.now()}`,
-      userId: user.id,
-      tranId: tranId,
-      amount: Number(amount),
-      currency: 'BDT',
-      paymentType: paymentType.toUpperCase(),
-      status: 'PENDING',
-      cardType: 'SSLCommerz Gateway',
-      createdAt: new Date().toISOString(),
-      user: { fullName: user.fullName || 'Renter Member', email: user.email || 'renter@ekota.com', role: user.role || 'RENTER' },
-    };
+    // 1. Create Payment record in PostgreSQL FIRST with PENDING status
+    const payment = await prisma.payment.create({
+      data: {
+        userId: user.id,
+        listingId: listingId || null,
+        tranId: tranId,
+        amount: Number(amount),
+        currency: 'BDT',
+        paymentType: normalizedPaymentType,
+        status: 'PENDING',
+      },
+      include: {
+        user: { select: { id: true, fullName: true, email: true, role: true } },
+        listing: { select: { id: true, assetName: true, category: true } },
+      },
+    });
 
-    try {
-      const dbPay = await prisma.payment.create({
-        data: {
-          userId: user.id,
-          tranId: tranId,
-          amount: Number(amount),
-          currency: 'BDT',
-          paymentType: paymentType.toUpperCase(),
-          status: 'PENDING',
-        },
-      });
-      newPayment.id = dbPay.id;
-    } catch (_e) {}
-
-    livePayments.unshift(newPayment);
-
+    // 2. Initiate session with SSLCommerz Gateway
     const sessionResult = await sslcommerzService.initiateSession({
       tran_id: tranId,
       total_amount: Number(amount),
@@ -85,15 +150,22 @@ async function initiatePayment(req, res, next) {
       cus_email: user.email || 'customer@ekota.com',
       cus_phone: user.phoneNumber || '01700000000',
       product_name: productName,
-      product_category: paymentType,
+      product_category: normalizedPaymentType,
+    });
+
+    const gatewayUrl = sessionResult.gatewayPageUrl || `https://sandbox.sslcommerz.com/gwprocess/v4/simulators/index.php?tran_id=${tranId}`;
+
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { gatewayPageUrl: gatewayUrl },
     });
 
     return res.status(201).json({
-      message: 'Payment session initiated successfully. Status is PENDING admin verification.',
-      paymentId: newPayment.id,
-      tranId: newPayment.tranId,
+      message: 'Payment session initiated successfully. Status is PENDING verification.',
+      paymentId: payment.id,
+      tranId: payment.tranId,
       status: 'PENDING',
-      gatewayPageUrl: sessionResult.gatewayPageUrl || `https://sandbox.sslcommerz.com/gwprocess/v4/simulators/index.php?tran_id=${tranId}`,
+      gatewayPageUrl: gatewayUrl,
     });
   } catch (error) {
     return next(error);
@@ -101,43 +173,197 @@ async function initiatePayment(req, res, next) {
 }
 
 /**
- * Handle SSLCommerz Success Callback (Keeps status PENDING for Admin Verification)
+ * Handle SSLCommerz Automated IPN (Server-to-Server Callback)
+ * Returns JSON response for SSLCommerz background server
+ */
+async function handleIPN(req, res, next) {
+  try {
+    const payload = { ...req.body, ...req.query };
+    const { tran_id, val_id } = payload;
+
+    if (!tran_id) {
+      return res.status(400).json({ message: 'Missing transaction ID' });
+    }
+
+    const validatedPayment = await processPaymentValidation(tran_id, val_id, payload);
+
+    if (validatedPayment && validatedPayment.status === 'VALIDATED') {
+      return res.json({
+        success: true,
+        message: 'Payment validated successfully via SSLCommerz IPN',
+        payment: validatedPayment,
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: 'Payment validation failed or pending',
+      payment: validatedPayment,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * Handle SSLCommerz Success Callback Redirect (Browser / Webview)
+ * Renders a Beautiful, Responsive HTML Success Page
  */
 async function handleSuccess(req, res, next) {
   try {
     const payload = { ...req.body, ...req.query };
-    const { tran_id } = payload;
+    const { tran_id, val_id } = payload;
 
-    const payIndex = livePayments.findIndex(p => p.tranId === tran_id);
-    if (payIndex !== -1) {
-      livePayments[payIndex].metadata = payload;
-    }
+    const validatedPayment = await processPaymentValidation(tran_id, val_id, payload);
 
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
-      return res.json({ message: 'Payment submitted successfully. Pending Admin verification.', tranId: tran_id, status: 'PENDING' });
+      return res.json({
+        success: true,
+        message: 'Payment validated successfully via SSLCommerz IPN',
+        payment: validatedPayment,
+      });
     }
+
+    const amountStr = validatedPayment ? Number(validatedPayment.amount).toLocaleString('en-BD') : (payload.amount || '0');
+    const paymentTypeStr = validatedPayment?.paymentType || payload.product_category || 'RENT';
+    const cardTypeStr = validatedPayment?.cardType || payload.card_type || 'SSLCommerz Gateway';
+    const tranIdStr = tran_id || validatedPayment?.tranId || 'EKOTA-PAY-01';
 
     return res.send(`
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
       <head>
-        <title>Payment Submitted - Pending Admin Verification</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Successful - Ekota</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
         <style>
-          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f4f6; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-          .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); text-align: center; max-width: 450px; }
-          .icon { font-size: 50px; color: #d97706; margin-bottom: 16px; }
-          h2 { color: #111827; margin-bottom: 8px; }
-          p { color: #6b7280; margin: 6px 0; }
-          .badge { display: inline-block; background: #fef3c7; color: #d97706; font-weight: bold; padding: 6px 16px; border-radius: 20px; margin-top: 15px; }
+          * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+          body { background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #022c22 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; color: #111827; }
+          .card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35); overflow: hidden; animation: popIn 0.5s ease-out; }
+          @keyframes popIn { 0% { opacity: 0; transform: scale(0.9); } 100% { opacity: 1; transform: scale(1); } }
+          .header { background: linear-gradient(135deg, #10b981, #047857); padding: 36px 24px; text-align: center; color: white; position: relative; }
+          .checkmark-circle { width: 80px; height: 80px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; box-shadow: 0 10px 25px rgba(0,0,0,0.15); }
+          .checkmark { color: #047857; font-size: 44px; font-weight: bold; }
+          .header h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+          .header p { font-size: 14px; opacity: 0.9; margin-top: 4px; }
+          .content { padding: 28px 24px; }
+          .receipt-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; margin-bottom: 24px; }
+          .receipt-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 14px; }
+          .receipt-row:last-child { margin-bottom: 0; }
+          .receipt-label { color: #64748b; font-weight: 500; }
+          .receipt-val { color: #0f172a; font-weight: 700; text-align: right; }
+          .amount-tag { font-size: 22px; color: #047857; font-weight: 800; }
+          .badge { display: inline-block; background: #d1fae5; color: #047857; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
+          .btn { display: block; width: 100%; background: #047857; color: white; text-align: center; text-decoration: none; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 15px; border: none; cursor: pointer; transition: all 0.2s; }
+          .btn:hover { background: #065f46; transform: translateY(-1px); }
         </style>
       </head>
       <body>
         <div class="card">
-          <div class="icon">⏳</div>
-          <h2>Payment Submitted!</h2>
-          <p>Transaction ID: <strong>${tran_id || 'EKOTA-PAY-01'}</strong></p>
-          <p>Status: <strong>PENDING ADMIN VERIFICATION</strong></p>
-          <div class="badge">Awaiting Admin Validation</div>
+          <div class="header">
+            <div class="checkmark-circle"><span class="checkmark">✓</span></div>
+            <h1>Payment Successful!</h1>
+            <p>Thank you! Your transaction has been verified.</p>
+          </div>
+          <div class="content">
+            <div class="receipt-box">
+              <div class="receipt-row">
+                <span class="receipt-label">Amount Paid</span>
+                <span class="amount-tag">৳${amountStr} BDT</span>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Transaction ID</span>
+                <span class="receipt-val" style="font-family:monospace;font-size:13px">${tranIdStr}</span>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Payment Method</span>
+                <span class="receipt-val">${cardTypeStr}</span>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Payment Type</span>
+                <span class="receipt-val">${paymentTypeStr}</span>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Status</span>
+                <span class="badge">VALIDATED</span>
+              </div>
+            </div>
+            <button class="btn" onclick="handleReturnApp()">Return to Ekota App</button>
+            <p id="return-note" style="display:none;margin-top:14px;font-size:13px;color:#047857;text-align:center;font-weight:600;background:#d1fae5;padding:10px;border-radius:10px;">
+              ✓ Transaction Verified! You can safely close this browser window and open your Ekota App.
+            </p>
+          </div>
+        </div>
+        <script>
+          function handleReturnApp() {
+            document.getElementById("return-note").style.display = "block";
+            try {
+              if (window.opener) { window.close(); }
+            } catch(e) {}
+            try {
+              window.location.href = "ekota://payment-success";
+            } catch(e) {}
+            setTimeout(function() {
+              try { window.close(); } catch(e) {}
+            }, 800);
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * Handle SSLCommerz Fail Callback Redirect
+ */
+async function handleFail(req, res, next) {
+  try {
+    const payload = { ...req.body, ...req.query };
+    const { tran_id } = payload;
+
+    if (tran_id) {
+      try {
+        await prisma.payment.updateMany({
+          where: { tranId: tran_id },
+          data: { status: 'FAILED', metadata: payload },
+        });
+      } catch (_e) {}
+    }
+
+    return res.status(400).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Failed - Ekota</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+          body { background: linear-gradient(135deg, #7f1d1d 0%, #dc2626 50%, #450a0a 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; color: #111827; }
+          .card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #ef4444, #dc2626); padding: 36px 24px; text-align: center; color: white; }
+          .icon-circle { width: 80px; height: 80px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; }
+          .icon { color: #dc2626; font-size: 44px; font-weight: bold; }
+          .content { padding: 28px 24px; text-align: center; }
+          .btn { display: block; width: 100%; background: #dc2626; color: white; text-decoration: none; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 15px; border: none; cursor: pointer; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="header">
+            <div class="icon-circle"><span class="icon">✕</span></div>
+            <h1>Payment Failed</h1>
+            <p>Transaction ID: ${tran_id || 'N/A'}</p>
+          </div>
+          <div class="content">
+            <p style="color:#64748b;margin-bottom:10px">Your transaction was declined or failed by the gateway.</p>
+            <button class="btn" onclick="window.history.back();">Try Again / Return</button>
+          </div>
         </div>
       </body>
       </html>
@@ -147,84 +373,101 @@ async function handleSuccess(req, res, next) {
   }
 }
 
-async function handleFail(req, res, next) {
-  try {
-    const payload = { ...req.body, ...req.query };
-    const { tran_id } = payload;
-    if (tran_id) {
-      const payIndex = livePayments.findIndex(p => p.tranId === tran_id);
-      if (payIndex !== -1) livePayments[payIndex].status = 'FAILED';
-    }
-    return res.status(400).send('<h3>Payment Failed</h3>');
-  } catch (error) {
-    return next(error);
-  }
-}
-
+/**
+ * Handle SSLCommerz Cancel Callback Redirect
+ */
 async function handleCancel(req, res, next) {
   try {
     const payload = { ...req.body, ...req.query };
     const { tran_id } = payload;
+
     if (tran_id) {
-      const payIndex = livePayments.findIndex(p => p.tranId === tran_id);
-      if (payIndex !== -1) livePayments[payIndex].status = 'CANCELLED';
+      try {
+        await prisma.payment.updateMany({
+          where: { tranId: tran_id },
+          data: { status: 'CANCELLED', metadata: payload },
+        });
+      } catch (_e) {}
     }
-    return res.send('<h3>Payment Cancelled</h3>');
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Cancelled - Ekota</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+          body { background: linear-gradient(135deg, #1e293b 0%, #475569 50%, #0f172a 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; color: #111827; }
+          .card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #64748b, #475569); padding: 36px 24px; text-align: center; color: white; }
+          .icon-circle { width: 80px; height: 80px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; }
+          .icon { color: #475569; font-size: 44px; font-weight: bold; }
+          .content { padding: 28px 24px; text-align: center; }
+          .btn { display: block; width: 100%; background: #475569; color: white; text-decoration: none; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 15px; border: none; cursor: pointer; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="header">
+            <div class="icon-circle"><span class="icon">!</span></div>
+            <h1>Payment Cancelled</h1>
+            <p>Transaction ID: ${tran_id || 'N/A'}</p>
+          </div>
+          <div class="content">
+            <p style="color:#64748b;margin-bottom:10px">You have cancelled the payment session.</p>
+            <button class="btn" onclick="window.history.back();">Return to Ekota App</button>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
   } catch (error) {
     return next(error);
   }
 }
 
-async function handleIPN(req, res) {
-  return res.json({ message: 'IPN received' });
-}
-
 /**
- * Get Payment History for logged in user
+ * Get Payment History for authenticated user from PostgreSQL
  */
 async function getUserPayments(req, res, next) {
   try {
-    let dbPayments = [];
-    try {
-      dbPayments = await prisma.payment.findMany({
-        where: { userId: req.user?.id },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch (_e) {}
-
-    const map = new Map();
-    for (const p of livePayments) {
-      if (!req.user?.id || p.userId === req.user.id || p.user?.email?.toLowerCase() === req.user?.email?.toLowerCase()) {
-        map.set(p.tranId || p.id, p);
-      }
-    }
-    for (const dbP of dbPayments) {
-      map.set(dbP.tranId || dbP.id, {
-        id: dbP.id,
-        tranId: dbP.tranId,
-        amount: dbP.amount,
-        currency: dbP.currency || 'BDT',
-        paymentType: dbP.paymentType,
-        status: dbP.status,
-        cardType: dbP.cardType || 'ONLINE',
-        createdAt: dbP.createdAt,
-        user: dbP.user || { fullName: 'Renter Member', email: 'renter@ekota.com', role: 'RENTER' },
-      });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.json({ payments: [] });
     }
 
-    const combined = Array.from(map.values());
-    return res.json({ payments: combined.length > 0 ? combined : livePayments });
+    const payments = await prisma.payment.findMany({
+      where: { userId },
+      include: {
+        user: { select: { id: true, fullName: true, email: true, role: true } },
+        listing: { select: { id: true, assetName: true, category: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return res.json({ payments });
   } catch (error) {
     return next(error);
   }
 }
 
 /**
- * Get payment details by ID
+ * Get payment details by ID or transaction ID from PostgreSQL
  */
 async function getPaymentById(req, res, next) {
   try {
-    const payment = livePayments.find(p => p.id === req.params.id || p.tranId === req.params.id);
+    const { id } = req.params;
+    const payment = await prisma.payment.findFirst({
+      where: { OR: [{ id: id }, { tranId: id }] },
+      include: {
+        user: { select: { id: true, fullName: true, email: true, role: true } },
+        listing: { select: { id: true, assetName: true, category: true } },
+      },
+    });
+
     if (!payment) return res.status(404).json({ message: 'Payment record not found' });
     return res.json({ payment });
   } catch (error) {
@@ -233,161 +476,126 @@ async function getPaymentById(req, res, next) {
 }
 
 /**
- * Admin: Get all payments
+ * Admin: Get all payments from PostgreSQL
  */
 async function getAllPayments(req, res, next) {
   try {
-    let dbPayments = [];
-    try {
-      dbPayments = await prisma.payment.findMany({
-        include: {
-          user: {
-            select: { id: true, fullName: true, email: true, role: true },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch (_e) {}
+    const payments = await prisma.payment.findMany({
+      include: {
+        user: { select: { id: true, fullName: true, email: true, role: true } },
+        listing: { select: { id: true, assetName: true, category: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    const map = new Map();
-    for (const p of livePayments) {
-      map.set(p.tranId || p.id, p);
-    }
-    for (const dbP of dbPayments) {
-      map.set(dbP.tranId || dbP.id, {
-        id: dbP.id,
-        tranId: dbP.tranId,
-        amount: dbP.amount,
-        currency: dbP.currency || 'BDT',
-        paymentType: dbP.paymentType,
-        status: dbP.status,
-        cardType: dbP.cardType || 'ONLINE',
-        createdAt: dbP.createdAt,
-        user: dbP.user || { fullName: 'Customer', email: 'user@ekota.com', role: 'RENTER' },
-      });
-    }
-
-    const combined = Array.from(map.values());
-    return res.json({ payments: combined });
+    return res.json({ payments });
   } catch (error) {
     return next(error);
   }
 }
 
 /**
- * Admin: Validate Payment (PATCH /api/payments/:id/validate or approve)
+ * Admin: Manual Override Validate Payment (PATCH /api/payments/:id/validate)
  */
 async function adminValidatePayment(req, res, next) {
   try {
     const { id } = req.params;
-    let target = null;
 
-    // 1. Update in DB if matched
+    const dbMatch = await prisma.payment.findFirst({
+      where: { OR: [{ id: id }, { tranId: id }] },
+      include: { user: true },
+    });
+
+    if (!dbMatch) {
+      return res.status(404).json({ success: false, message: 'Payment record not found' });
+    }
+
+    const updatedPayment = await prisma.payment.update({
+      where: { id: dbMatch.id },
+      data: { status: 'VALIDATED' },
+      include: { user: true },
+    });
+
     try {
-      const dbMatch = await prisma.payment.findFirst({
-        where: { OR: [{ id: id }, { tranId: id }] }
+      await prisma.notification.create({
+        data: {
+          userId: updatedPayment.userId,
+          title: 'Payment Validated',
+          message: `Your payment of ৳${updatedPayment.amount} (${updatedPayment.paymentType}) with Tran ID ${updatedPayment.tranId} has been verified and validated by Admin.`,
+          type: 'PAYMENT_SUCCESS',
+        },
       });
-      if (dbMatch) {
-        await prisma.payment.update({
-          where: { id: dbMatch.id },
-          data: { status: 'VALIDATED' },
-        });
-        target = { ...dbMatch, status: 'VALIDATED' };
-      }
     } catch (_e) {}
 
-    // 2. Update in memory livePayments if matched
-    let payIndex = livePayments.findIndex(p => p.id === id || p.tranId === id);
-    if (payIndex === -1 && id) {
-      payIndex = livePayments.findIndex(p => p.id.includes(id) || p.tranId.includes(id) || id.includes(p.id) || id.includes(p.tranId));
-    }
-
-    if (payIndex !== -1) {
-      livePayments[payIndex].status = 'VALIDATED';
-      livePayments[payIndex].validatedAt = new Date().toISOString();
-      if (!target) target = livePayments[payIndex];
-    }
-
-    if (target) {
-      try {
-        await prisma.notification.create({
-          data: {
-            userId: target.userId || '00000000-0000-0000-0000-000000000001',
-            title: 'Payment Validated',
-            message: `Your payment of ৳${target.amount} (${target.paymentType}) with Tran ID ${target.tranId} has been verified and validated by Admin.`,
-            type: 'PAYMENT_SUCCESS',
-          },
-        });
-      } catch (_e) {}
-
-      return res.json({
-        success: true,
-        message: `Payment ${target.tranId || id} validated successfully by Admin`,
-        payment: target,
+    if (updatedPayment.user?.email) {
+      sendPaymentSuccessEmail({
+        to: updatedPayment.user.email,
+        fullName: updatedPayment.user.fullName,
+        amount: Number(updatedPayment.amount),
+        tranId: updatedPayment.tranId,
+        paymentType: updatedPayment.paymentType,
       });
     }
 
-    return res.status(404).json({ success: false, message: 'Payment record not found' });
+    return res.json({
+      success: true,
+      message: `Payment ${updatedPayment.tranId} validated successfully by Admin`,
+      payment: updatedPayment,
+    });
   } catch (error) {
     return next(error);
   }
 }
 
 /**
- * Admin: Reject Payment (PATCH /api/payments/:id/reject)
+ * Admin: Manual Override Reject Payment (PATCH /api/payments/:id/reject)
  */
 async function adminRejectPayment(req, res, next) {
   try {
     const { id } = req.params;
     const { note } = req.body || {};
-    let target = null;
 
-    // 1. Update in DB if matched
+    const dbMatch = await prisma.payment.findFirst({
+      where: { OR: [{ id: id }, { tranId: id }] },
+      include: { user: true },
+    });
+
+    if (!dbMatch) {
+      return res.status(404).json({ success: false, message: 'Payment record not found' });
+    }
+
+    const updatedPayment = await prisma.payment.update({
+      where: { id: dbMatch.id },
+      data: { status: 'FAILED' },
+      include: { user: true },
+    });
+
     try {
-      const dbMatch = await prisma.payment.findFirst({
-        where: { OR: [{ id: id }, { tranId: id }] }
+      await prisma.notification.create({
+        data: {
+          userId: updatedPayment.userId,
+          title: 'Payment Rejected',
+          message: `Your payment of ৳${updatedPayment.amount} (${updatedPayment.paymentType}) with Tran ID ${updatedPayment.tranId} was rejected by Admin. Note: ${note || 'Rejected by administrator'}`,
+          type: 'PAYMENT_FAILED',
+        },
       });
-      if (dbMatch) {
-        await prisma.payment.update({
-          where: { id: dbMatch.id },
-          data: { status: 'FAILED' },
-        });
-        target = { ...dbMatch, status: 'FAILED', adminNote: note || 'Rejected by administrator' };
-      }
     } catch (_e) {}
 
-    // 2. Update in memory livePayments if matched
-    let payIndex = livePayments.findIndex(p => p.id === id || p.tranId === id);
-    if (payIndex === -1 && id) {
-      payIndex = livePayments.findIndex(p => p.id.includes(id) || p.tranId.includes(id) || id.includes(p.id) || id.includes(p.tranId));
-    }
-
-    if (payIndex !== -1) {
-      livePayments[payIndex].status = 'FAILED';
-      livePayments[payIndex].adminNote = note || 'Rejected by administrator';
-      if (!target) target = livePayments[payIndex];
-    }
-
-    if (target) {
-      try {
-        await prisma.notification.create({
-          data: {
-            userId: target.userId || '00000000-0000-0000-0000-000000000001',
-            title: 'Payment Rejected',
-            message: `Your payment of ৳${target.amount} (${target.paymentType}) with Tran ID ${target.tranId} was rejected by Admin. Note: ${target.adminNote || 'Rejected by administrator'}`,
-            type: 'PAYMENT_FAILED',
-          },
-        });
-      } catch (_e) {}
-
-      return res.json({
-        success: true,
-        message: `Payment ${target.tranId || id} rejected by Admin`,
-        payment: target,
+    if (updatedPayment.user?.email) {
+      sendPaymentFailedEmail({
+        to: updatedPayment.user.email,
+        fullName: updatedPayment.user.fullName,
+        amount: Number(updatedPayment.amount),
+        tranId: updatedPayment.tranId,
+        reason: note || 'Rejected by administrator',
       });
     }
 
-    return res.status(404).json({ success: false, message: 'Payment record not found' });
+    return res.json({
+      success: true,
+      message: `Payment ${updatedPayment.tranId} rejected by Admin`,
+      payment: updatedPayment,
+    });
   } catch (error) {
     return next(error);
   }

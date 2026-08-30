@@ -100,12 +100,16 @@ enum NotificationType {
   WITHDRAWAL_PROCESSED
   PAYMENT_SUCCESS
   PAYMENT_FAILED
+  FUNDING_UPDATE
+  FEE_DEDUCTED
+  NEW_MESSAGE
   GENERAL
 }
 
 model Payment {
   id             String        @id @default(uuid()) @db.Uuid
   userId         String        @map("user_id") @db.Uuid
+  listingId      String?       @map("listing_id") @db.Uuid
   tranId         String        @unique @map("tran_id") @db.VarChar(100)
   valId          String?       @map("val_id") @db.VarChar(100)
   amount         Decimal       @db.Decimal(12, 2)
@@ -119,7 +123,8 @@ model Payment {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
 
   @@map("payments")
 }
@@ -204,6 +209,7 @@ model Listing {
   // Relations
   comments           Comment[]
   reviews            Review[]
+  payments           Payment[]
 }
 
 model Comment {

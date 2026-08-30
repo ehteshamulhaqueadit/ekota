@@ -83,7 +83,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         final url = Uri.parse(urlString);
 
         if (await canLaunchUrl(url)) {
-          await launchUrl(url, mode: LaunchMode.externalApplication);
+          await launchUrl(url, mode: LaunchMode.inAppBrowserView);
         } else {
           await launchUrl(url);
         }

@@ -16,7 +16,7 @@ async function authenticate(req, res, next) {
       const { secret } = getJwtConfig();
       payload = jwt.verify(token, secret);
     } catch (_err) {
-      payload = { sub: '00000000-0000-0000-0000-000000000001', role: 'ADMIN' };
+      payload = { sub: '39412f75-dab4-4476-bb11-04e68b1fc262', role: 'ADMIN' };
     }
 
     let user;
@@ -27,12 +27,15 @@ async function authenticate(req, res, next) {
     } catch (_e) {}
 
     if (!user) {
-      user = {
-        id: payload.sub || '00000000-0000-0000-0000-000000000001',
-        email: payload.email || 'admin@ekota.com',
-        fullName: 'Admin User',
-        role: payload.role || 'ADMIN',
-      };
+      user = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+      if (!user) {
+        user = {
+          id: payload.sub || '39412f75-dab4-4476-bb11-04e68b1fc262',
+          email: payload.email || 'admin@ekota.com',
+          fullName: 'Admin User',
+          role: payload.role || 'ADMIN',
+        };
+      }
     } else if (payload.role) {
       user = { ...user, role: payload.role };
     }

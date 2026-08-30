@@ -549,6 +549,106 @@ async function notifyProducer(req, res, next) {
   }
 }
 
+/**
+ * Get dynamic Admin Dashboard statistics from PostgreSQL
+ */
+async function getDashboardStats(req, res, next) {
+  try {
+    // 1. User metrics
+    const totalUsers = await prisma.user.count();
+    const producersCount = await prisma.user.count({ where: { role: 'PRODUCER' } });
+    const investorsCount = await prisma.user.count({ where: { role: 'INVESTOR' } });
+    const rentersCount = await prisma.user.count({ where: { role: 'RENTER' } });
+    const blockedCount = await prisma.user.count({ where: { isBlocked: true } });
+
+    // 2. Post metrics
+    const totalPosts = await prisma.listing.count();
+    const activePosts = await prisma.listing.count({ where: { status: 'active' } });
+    const pausedPosts = await prisma.listing.count({ where: { status: 'paused' } });
+
+    // 3. Pending actions
+    const pendingWithdrawalsCount = await prisma.withdrawalRequest.count({ where: { status: 'PENDING' } });
+    const pendingPaymentsCount = await prisma.payment.count({ where: { status: 'PENDING' } });
+    const validatedPaymentsCount = await prisma.payment.count({ where: { status: 'VALIDATED' } });
+
+    // 4. Fetch recent payments, withdrawals, and listings
+    const recentPayments = await prisma.payment.findMany({
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+      include: { user: { select: { fullName: true, email: true } } },
+    });
+
+    const recentWithdrawals = await prisma.withdrawalRequest.findMany({
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+      include: { producer: { select: { fullName: true, email: true } } },
+    });
+
+    const recentListings = await prisma.listing.findMany({
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+      include: { producer: { select: { fullName: true, email: true } } },
+    });
+
+    // Format unified recent activity timeline
+    const activities = [
+      ...recentPayments.map(p => ({
+        id: `pay-${p.id}`,
+        type: 'PAYMENT',
+        title: `${p.user?.fullName || 'User'} ${p.status === 'VALIDATED' ? 'completed payment' : 'initiated payment'} of ৳${Number(p.amount).toLocaleString('en-BD')} (${p.paymentType})`,
+        status: p.status,
+        createdAt: p.createdAt,
+      })),
+      ...recentWithdrawals.map(w => ({
+        id: `wth-${w.id}`,
+        type: 'WITHDRAWAL',
+        title: `Producer ${w.producer?.fullName || 'Producer'} requested ৳${Number(w.amount).toLocaleString('en-BD')} payout (${w.method})`,
+        status: w.status,
+        createdAt: w.createdAt,
+      })),
+      ...recentListings.map(l => ({
+        id: `lst-${l.id}`,
+        type: 'POST',
+        title: `Producer ${l.producer?.fullName || 'Producer'} posted asset "${l.assetName}"`,
+        status: l.status,
+        createdAt: l.createdAt,
+      })),
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8);
+
+    return res.json({
+      users: {
+        total: totalUsers,
+        producers: producersCount,
+        investors: investorsCount,
+        renters: rentersCount,
+        blocked: blockedCount,
+      },
+      posts: {
+        total: totalPosts,
+        active: activePosts,
+        paused: pausedPosts,
+      },
+      pendingActions: {
+        withdrawals: pendingWithdrawalsCount,
+        payments: pendingPaymentsCount,
+        validatedPayments: validatedPaymentsCount,
+      },
+      recentActivity: activities,
+      recentListings: recentListings.map(l => ({
+        id: l.id,
+        producerName: l.producer?.fullName || 'Producer',
+        assetName: l.assetName,
+        category: l.category,
+        rentalPrice: Number(l.rentalPrice),
+        status: l.status,
+        createdAt: l.createdAt,
+      })),
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   getUsers,
   blockUser,
@@ -556,5 +656,7 @@ module.exports = {
   getAllListings,
   updateListing,
   deleteListing,
-  notifyProducer
+  notifyProducer,
+  getDashboardStats
 };
+

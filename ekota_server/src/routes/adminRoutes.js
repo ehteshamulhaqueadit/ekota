@@ -8,12 +8,16 @@ const {
   getAllListings,
   updateListing,
   deleteListing,
-  notifyProducer
+  notifyProducer,
+  getDashboardStats
 } = require('../controllers/adminController');
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
 router.use(requireAdmin);
+
+// Dashboard Overview Metrics Route
+router.get('/dashboard', getDashboardStats);
 
 // User Management Routes
 router.get('/users', getUsers);

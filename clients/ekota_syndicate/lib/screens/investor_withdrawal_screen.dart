@@ -4,7 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/withdrawal_model.dart';
 import '../services/withdrawal_service.dart';
-import 'login_screen.dart';
+import '../models/chat_message_model.dart';
+import '../services/chat_api_service.dart';
+import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
+import 'syndicate_chat_screen.dart';
 
 class InvestorWithdrawalScreen extends StatefulWidget {
   const InvestorWithdrawalScreen({super.key});
@@ -38,7 +42,7 @@ class _InvestorWithdrawalScreenState extends State<InvestorWithdrawalScreen> wit
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadData();
     // Auto-poll both investments and withdrawals every 3 seconds
     _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -178,31 +182,35 @@ class _InvestorWithdrawalScreenState extends State<InvestorWithdrawalScreen> wit
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ekota Investor & Syndicate Portal'),
-        backgroundColor: const Color(0xFF0F172A),
-        foregroundColor: Colors.white,
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Ekota Syndicate', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.3)),
+            Text('Institutional Split-Buying & Investor Portal', style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.normal)),
+          ],
+        ),
+        backgroundColor: AppTheme.primary,
+        elevation: 0,
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: const Color(0xFF10B981),
+          indicatorColor: AppTheme.accent,
+          indicatorWeight: 3,
+          labelColor: Colors.white,
+          unselectedLabelColor: AppTheme.textMuted,
           tabs: const [
-            Tab(icon: Icon(Icons.show_chart), text: 'INVESTMENT (SSLCommerz)'),
-            Tab(icon: Icon(Icons.account_balance_wallet), text: 'WITHDRAWAL PAYOUT'),
+            Tab(icon: Icon(Icons.show_chart, size: 20), text: 'INVESTMENT'),
+            Tab(icon: Icon(Icons.forum, size: 20), text: 'SYNDICATE CHAT'),
+            Tab(icon: Icon(Icons.account_balance_wallet, size: 20), text: 'WITHDRAWAL'),
           ],
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
+          IconButton(icon: const Icon(Icons.refresh, size: 20), tooltip: 'Refresh Metrics', onPressed: _loadData),
           IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
+            icon: const Icon(Icons.logout, size: 20),
+            tooltip: 'Sign Out',
+            onPressed: () {
               _pollingTimer?.cancel();
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.clear();
-              if (mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (route) => false,
-                );
-              }
+              AuthService.logout(context);
             },
           ),
         ],
@@ -352,7 +360,10 @@ class _InvestorWithdrawalScreenState extends State<InvestorWithdrawalScreen> wit
             ),
           ),
 
-          // Tab 2: Producer Payout Withdrawal & Withdrawal History
+          // Tab 2: Syndicate Real-Time Chat & Discussion Threads
+          const SyndicateChatThreadsTab(),
+
+          // Tab 3: Producer Payout Withdrawal & Withdrawal History
           SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -507,6 +518,176 @@ class _InvestorWithdrawalScreenState extends State<InvestorWithdrawalScreen> wit
             ),
           ),
         ],
+      ),
+    );
+  }
+
+}
+
+class SyndicateChatThreadsTab extends StatefulWidget {
+  const SyndicateChatThreadsTab({super.key});
+
+  @override
+  State<SyndicateChatThreadsTab> createState() => _SyndicateChatThreadsTabState();
+}
+
+class _SyndicateChatThreadsTabState extends State<SyndicateChatThreadsTab> with AutomaticKeepAliveClientMixin {
+  List<SyndicateThreadModel>? _threads;
+  bool _isLoading = true;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchThreads();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchThreads() async {
+    final list = await ChatApiService().fetchThreads();
+    if (mounted) {
+      setState(() {
+        _threads = list;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _refresh() async {
+    final list = await ChatApiService().fetchThreads();
+    if (mounted) {
+      setState(() {
+        _threads = list;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final threads = _threads ?? [];
+    if (threads.isEmpty) {
+      return const Center(
+        child: Text('No active syndicate threads found.'),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView.builder(
+        key: const PageStorageKey('syndicate_opportunity_list'),
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: threads.length,
+        itemBuilder: (context, index) {
+          final thread = threads[index];
+          final target = thread.fundingTarget;
+          final current = thread.currentFunding;
+          final percentage = thread.fundingPercentage;
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          thread.assetName,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFA7F3D0)),
+                        ),
+                        child: Text(
+                          '$percentage% Funded',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${thread.category} • ${thread.producerName}',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: (current / target).clamp(0.0, 1.0),
+                      minHeight: 8,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '৳${current.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} Raised',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                      ),
+                      Text(
+                        'Target: ৳${target.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} BDT',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.forum, size: 18),
+                      label: const Text('Open Syndicate Discussion Chat'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0F172A),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SyndicateChatScreen(thread: thread),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

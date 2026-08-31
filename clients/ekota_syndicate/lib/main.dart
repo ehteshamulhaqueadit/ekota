@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 
 Future<void> main() async {
@@ -38,6 +39,8 @@ class _EkotaSyndicateAppState extends State<EkotaSyndicateApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Ekota Syndicate',
+      theme: AppTheme.theme,
+      debugShowCheckedModeBanner: false,
       home: _isLoading
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : _isLoggedIn

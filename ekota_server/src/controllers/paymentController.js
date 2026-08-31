@@ -59,6 +59,27 @@ async function processPaymentValidation(tranId, valId, payload) {
       });
     }
 
+    // Broadcast real-time System Message to Syndicate Chat if associated with an asset thread
+    if (payment.listingId) {
+      try {
+        const listing = await prisma.listing.findUnique({
+          where: { id: payment.listingId },
+          include: { payments: { where: { status: 'VALIDATED' } } },
+        });
+        if (listing) {
+          const totalRaised = listing.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+          const target = Number(listing.fundingTarget) || 100000;
+          const percentage = Math.min(100, Math.round((totalRaised / target) * 100));
+          const { broadcastSystemMessage } = require('../socket/chatSocket');
+          await broadcastSystemMessage(
+            payment.listingId,
+            `Funding Progress Update: Reached ${percentage}% funded! (৳${totalRaised.toLocaleString('en-BD')} / ৳${target.toLocaleString('en-BD')} BDT)`,
+            { fundingPercentage: percentage, totalRaised, fundingTarget: target }
+          );
+        }
+      } catch (_e) {}
+    }
+
     return updatedPayment;
   } else {
     const failedPayment = await prisma.payment.update({

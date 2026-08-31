@@ -16,6 +16,9 @@ interface Listing {
   rentalPrice: number;
   description: string;
   specifications?: string;
+  weightKg?: number;
+  dimensionsM3?: number;
+  declaredValueBdt?: number;
   status: string;
   campaignStatus: string;
   createdAt: string;
@@ -46,8 +49,43 @@ export const PostManagement: React.FC = () => {
     status: 'active',
     campaignStatus: 'funding',
     description: '',
-    specifications: ''
+    specifications: '',
+    weightKg: 0,
+    dimensionsM3: 0,
+    declaredValueBdt: 0
   });
+
+  const calculateWarehouseSafetyFee = (listing: Listing) => {
+    let weight = listing.weightKg;
+    let dimensions = listing.dimensionsM3;
+    let value = listing.declaredValueBdt;
+
+    if ((weight === undefined || weight === null) && listing.specifications) {
+      const match = listing.specifications.match(/([\d.]+)\s*kg/i);
+      if (match) weight = parseFloat(match[1]);
+    }
+    if ((dimensions === undefined || dimensions === null) && listing.specifications) {
+      const match = listing.specifications.match(/([\d.]+)\s*m3/i) || listing.specifications.match(/([\d.]+)\s*m³/i);
+      if (match) dimensions = parseFloat(match[1]);
+    }
+
+    if (weight !== undefined && weight !== null && weight > 0 &&
+        dimensions !== undefined && dimensions !== null && dimensions > 0 &&
+        value !== undefined && value !== null && value > 0) {
+      const monthlyFee = (weight * 12) + (dimensions * 200) + (value * 0.004);
+      return {
+        feeText: `৳${Math.round(monthlyFee).toLocaleString('en-BD')}/mo`,
+        feeAmount: Math.round(monthlyFee),
+        isValid: true
+      };
+    }
+
+    return {
+      feeText: 'N/A',
+      feeAmount: null,
+      isValid: false
+    };
+  };
 
   useEffect(() => {
     fetchListings();
@@ -73,6 +111,9 @@ export const PostManagement: React.FC = () => {
           rentalPrice: 1500,
           description: 'High efficiency paddy harvester available for seasonal lease.',
           specifications: 'Engine: 75HP Diesel, Fuel Capacity: 60L',
+          weightKg: 450,
+          dimensionsM3: 6.5,
+          declaredValueBdt: 250000,
           status: 'active',
           campaignStatus: 'funding',
           createdAt: new Date().toISOString(),
@@ -92,6 +133,9 @@ export const PostManagement: React.FC = () => {
           rentalPrice: 3000,
           description: 'Temperature-controlled preservation unit for fruits and vegetables.',
           specifications: 'Capacity: 10 Metric Tons, Temp Range: 2°C to 10°C',
+          weightKg: 1200,
+          dimensionsM3: 18.0,
+          declaredValueBdt: 500000,
           status: 'active',
           campaignStatus: 'funding',
           createdAt: new Date().toISOString(),
@@ -100,6 +144,25 @@ export const PostManagement: React.FC = () => {
             id: '10000000-0000-0000-0000-000000000001',
             fullName: 'Karim Agro',
             email: 'producer_karim@ekota.com',
+            isBlocked: false
+          }
+        },
+        {
+          id: '20000000-0000-0000-0000-000000000003',
+          assetName: 'Organic Seed & Fertilizer Sprayer',
+          category: 'Farming Tools',
+          fundingTarget: 80000,
+          rentalPrice: 600,
+          description: 'Multi-nozzle automated sprayer unit for medium-sized croplands.',
+          specifications: 'Tank Volume: 200L, Spray Radius: 12 meters',
+          status: 'paused',
+          campaignStatus: 'funding',
+          createdAt: new Date().toISOString(),
+          producerId: '10000000-0000-0000-0000-000000000004',
+          producer: {
+            id: '10000000-0000-0000-0000-000000000004',
+            fullName: 'Amina Organic Farms',
+            email: 'amina_farms@ekota.com',
             isBlocked: false
           }
         }
@@ -124,7 +187,10 @@ export const PostManagement: React.FC = () => {
       status: listing.status || 'active',
       campaignStatus: listing.campaignStatus || 'funding',
       description: listing.description || '',
-      specifications: listing.specifications || ''
+      specifications: listing.specifications || '',
+      weightKg: listing.weightKg || 0,
+      dimensionsM3: listing.dimensionsM3 || 0,
+      declaredValueBdt: listing.declaredValueBdt || listing.fundingTarget || 0
     });
     setActionError(null);
   };
@@ -212,7 +278,7 @@ export const PostManagement: React.FC = () => {
         <div>
           <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>Producer Post Management</h2>
           <p style={{ color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>
-            View, edit, or manage producer posts and notify producers of any policy violations.
+            View, edit, or manage producer posts, calculate accrued warehouse safety fees, and notify producers of policy updates.
           </p>
         </div>
       </div>
@@ -281,63 +347,79 @@ export const PostManagement: React.FC = () => {
                   <th>Category</th>
                   <th>Funding Target</th>
                   <th>Rental Price</th>
+                  <th>Accrued Warehouse Safety Fee</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredListings.map((listing) => (
-                  <tr key={listing.id}>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{listing.producer?.fullName || 'Producer'}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{listing.producer?.email || listing.producerId}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 500 }}>{listing.assetName}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {listing.description}
-                      </div>
-                    </td>
-                    <td>
-                      <span style={{ fontSize: '0.85rem', background: 'rgba(255, 255, 255, 0.08)', padding: '0.2rem 0.6rem', borderRadius: '4px' }}>
-                        {listing.category}
-                      </span>
-                    </td>
-                    <td>৳{listing.fundingTarget?.toLocaleString()}</td>
-                    <td>৳{listing.rentalPrice?.toLocaleString()}/day</td>
-                    <td>
-                      <span className={`status-badge ${listing.status === 'active' ? 'status-approved' : 'status-pending'}`}>
-                        {listing.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => openEditModal(listing)}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openNotifyModal(listing)}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: '#f59e0b', color: '#fff' }}
-                        >
-                          Notify
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteListing(listing.id, listing.assetName)}
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: 'var(--danger-color)', color: '#fff' }}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredListings.map((listing) => {
+                  const safetyFee = calculateWarehouseSafetyFee(listing);
+                  return (
+                    <tr key={listing.id}>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{listing.producer?.fullName || 'Producer'}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{listing.producer?.email || listing.producerId}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 500 }}>{listing.assetName}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: '240px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {listing.description}
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.85rem', background: 'rgba(255, 255, 255, 0.08)', padding: '0.2rem 0.6rem', borderRadius: '4px' }}>
+                          {listing.category}
+                        </span>
+                      </td>
+                      <td>৳{listing.fundingTarget?.toLocaleString()}</td>
+                      <td>৳{listing.rentalPrice?.toLocaleString()}/day</td>
+                      <td>
+                        {safetyFee.isValid ? (
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#10b981', fontSize: '0.9rem' }}>{safetyFee.feeText}</div>
+                            <div style={{ fontSize: '0.7rem', color: '#34d399', opacity: 0.9 }}>Deducted from dividend ledger</div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                            N/A
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`status-badge ${listing.status === 'active' ? 'status-approved' : 'status-pending'}`}>
+                          {listing.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => openEditModal(listing)}
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openNotifyModal(listing)}
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: '#f59e0b', color: '#fff' }}
+                          >
+                            Notify
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteListing(listing.id, listing.assetName)}
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', background: 'var(--danger-color)', color: '#fff' }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -352,7 +434,7 @@ export const PostManagement: React.FC = () => {
         }}>
           <div style={{
             background: 'var(--surface-color)', padding: '2rem', borderRadius: '12px',
-            maxWidth: '600px', width: '90%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border-color)'
+            maxWidth: '620px', width: '90%', maxHeight: '90vh', overflowY: 'auto', border: '1px solid var(--border-color)'
           }}>
             <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Edit Producer Post</h3>
             {actionError && (
@@ -418,6 +500,52 @@ export const PostManagement: React.FC = () => {
                     style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-primary)' }}
                   />
                 </div>
+              </div>
+
+              {/* Warehouse Safety Fee Parameters */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.8rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Warehouse Safety Fee Parameters</span>
+                  <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700 }}>
+                    Monthly Accrued Fee: {calculateWarehouseSafetyFee({ ...editingListing, ...editForm }).feeText}
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>Weight (kg)</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 450"
+                      value={editForm.weightKg || ''}
+                      onChange={(e) => setEditForm({ ...editForm, weightKg: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>Dimensions (m³)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="e.g. 6.5"
+                      value={editForm.dimensionsM3 || ''}
+                      onChange={(e) => setEditForm({ ...editForm, dimensionsM3: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem', color: 'var(--text-secondary)' }}>Declared Value (৳)</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 250000"
+                      value={editForm.declaredValueBdt || ''}
+                      onChange={(e) => setEditForm({ ...editForm, declaredValueBdt: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                </div>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', margin: '0.5rem 0 0 0' }}>
+                  * If weight, dimensions, or declared value is missing, accrued safety fee defaults to N/A. Fees are deducted proportionally from owners' rental dividend ledgers.
+                </p>
               </div>
 
               <div style={{ marginBottom: '1rem' }}>

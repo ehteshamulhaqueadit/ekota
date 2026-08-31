@@ -1,6 +1,76 @@
 const prisma = require('../config/prisma');
 
-// Get all listings for a specific producer (fallback for empty ID handled by middleware check or param)
+// Public search/browse — no auth needed
+async function searchListings(req, res) {
+  const { q } = req.query; // optional keyword
+  try {
+    const listings = await prisma.listing.findMany({
+      where: q
+        ? {
+          OR: [
+            { assetName: { contains: q, mode: 'insensitive' } },
+            { category: { contains: q, mode: 'insensitive' } },
+          ],
+        }
+        : undefined,
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(listings.map(l => ({ ...l, investorCount: 0 })));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to search listings' });
+  }
+}
+
+async function getProducerStats(req, res) {
+  const producerId = req.params.producerId || req.user.id;
+
+  try {
+    const listings = await prisma.listing.findMany({
+      where: { producerId },
+      select: {
+        campaignStatus: true,
+        reviews: {
+          select: {
+            rating: true,
+            authorId: true,
+            author: {
+              select: {
+                role: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const completedListings = listings.filter(
+      (listing) => String(listing.campaignStatus).toUpperCase() === 'DELIVERED'
+    );
+    const activeListings = listings.filter(
+      (listing) => String(listing.campaignStatus).toUpperCase() !== 'DELIVERED'
+    );
+
+    const reviews = listings.flatMap((listing) => listing.reviews);
+    const investorIds = new Set(
+      reviews
+        .filter((review) => review.author.role === 'INVESTOR')
+        .map((review) => review.authorId)
+    );
+    const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);
+
+    res.json({
+      gigsCompleted: completedListings.length,
+      gigsCurrentlyListed: activeListings.length,
+      investors: investorIds.size,
+      rating: reviews.length > 0 ? ratingTotal / reviews.length : 0
+    });
+  } catch (error) {
+    console.error('Error fetching producer stats:', error);
+    res.status(500).json({ error: 'Failed to fetch producer stats' });
+  }
+}
+
+// Get all listings for a specific producer
 async function getProducerListings(req, res) {
   const producerId = req.params.producerId || req.user.id;
   try {
@@ -28,20 +98,120 @@ async function createListing(req, res) {
   }
 }
 
-// Get a specific listing by ID
+// Get a specific listing by ID (enhanced with investment + rental data)
 async function getListingById(req, res) {
   const { id } = req.params;
   try {
+    const listing = await prisma.listing.findUnique({
+      where: { id },
+      include: {
+        producer: { select: { id: true, fullName: true } },
+        investments: {
+          select: {
+            id: true,
+            userId: true,
+            amount: true,
+            sharePercentage: true,
+            user: { select: { fullName: true } }
+          }
+        },
+        rentalPoolItem: {
+          select: {
+            id: true,
+            currentRentPrice: true,
+            status: true
+          }
+        },
+        warehouseStorage: {
+          select: {
+            id: true,
+            monthlyFee: true,
+            isActive: true,
+            storedAt: true
+          }
+        },
+        productLocation: {
+          select: {
+            latitude: true,
+            longitude: true,
+            address: true,
+            updatedAt: true
+          }
+        }
+      }
+    });
+    if (!listing) return res.status(404).json({ error: 'Listing not found' });
+
+    res.json({
+      ...listing,
+      investorCount: listing.investments.length,
+      fundingPercentage: listing.fundingTarget > 0
+        ? (listing.currentFunded / listing.fundingTarget) * 100
+        : 0
+    });
+  } catch (error) {
+    console.error('Error fetching listing:', error);
+    res.status(500).json({ error: 'Failed to fetch listing' });
+  }
+}
+
+// POST /api/listings/:id/confirm-delivery - Producer confirms order delivery
+async function confirmDelivery(req, res) {
+  const producerId = req.user.id;
+  const { id } = req.params;
+
+  try {
     const listing = await prisma.listing.findUnique({ where: { id } });
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
-    res.json({ ...listing, investorCount: 0 });
+
+    if (listing.producerId !== producerId) {
+      return res.status(403).json({ error: 'Only the producer can confirm delivery' });
+    }
+
+    const validStatuses = ['FULLY_FUNDED', 'IN_PRODUCTION'];
+    if (!validStatuses.includes(listing.campaignStatus.toUpperCase())) {
+      return res.status(400).json({
+        error: `Cannot confirm delivery. Current status: ${listing.campaignStatus}. Must be FULLY_FUNDED or IN_PRODUCTION.`
+      });
+    }
+
+    const updated = await prisma.listing.update({
+      where: { id },
+      data: {
+        campaignStatus: 'DELIVERED',
+        isDelivered: true
+      }
+    });
+
+    res.json({
+      listing: updated,
+      message: 'Order confirmed and marked as delivered'
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch listing' });
+    console.error('Error confirming delivery:', error);
+    res.status(500).json({ error: 'Failed to confirm delivery' });
   }
 }
 
 // Vote on a listing
 async function voteListing(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id } = req.params;
   const { type } = req.body; 
   let updateData = {};
@@ -58,6 +228,23 @@ async function voteListing(req, res) {
 
 // Get comments for a listing
 async function getComments(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id } = req.params;
   try {
     const comments = await prisma.comment.findMany({
@@ -82,6 +269,23 @@ async function getComments(req, res) {
 
 // Post a comment
 async function postComment(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id: listingId } = req.params;
   const { text } = req.body;
   const authorId = req.user.id;
@@ -107,6 +311,23 @@ async function postComment(req, res) {
 
 // Reply to a comment
 async function replyComment(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { commentId } = req.params;
   const { text } = req.body;
 
@@ -132,6 +353,23 @@ async function replyComment(req, res) {
 
 // Get reviews for a listing
 async function getReviews(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id } = req.params;
   try {
     const reviews = await prisma.review.findMany({
@@ -156,12 +394,46 @@ async function getReviews(req, res) {
 
 // Can review
 async function canReview(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const isInvestor = req.user.role === 'INVESTOR';
   res.json({ canReview: isInvestor });
 }
 
 // Post a review
 async function postReview(req, res) {
+    // Print the entire request object (very verbose!)
+  console.log(req);
+
+  // Print request body (most common for POST/PUT)
+  console.log('Body:', req.body);
+
+  // Print query parameters (?id=123&name=test)
+  console.log('Query:', req.query);
+
+  // Print route parameters (/example/:id)
+  console.log('Params:', req.params);
+
+  // Print headers
+  console.log('Headers:', req.headers);
+
+  // Print method and URL
+  console.log(`Method: ${req.method}, URL: ${req.url}`);
   const { id: listingId } = req.params;
   const { rating, text } = req.body;
   const authorId = req.user.id;
@@ -186,9 +458,12 @@ async function postReview(req, res) {
 }
 
 module.exports = {
+  searchListings,
+  getProducerStats,
   getProducerListings,
   createListing,
   getListingById,
+  confirmDelivery,
   voteListing,
   getComments,
   postComment,

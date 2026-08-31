@@ -41,6 +41,7 @@ function sanitizeUser(user) {
   };
 }
 
+// Signup — sends OTP email; user must verify before they can log in
 async function signup(req, res, next) {
   try {
     const { email, password, fullName, phoneNumber, role } = req.body;
@@ -49,11 +50,12 @@ async function signup(req, res, next) {
       return res.status(400).json({ message: 'email, password, fullName, and role are required' });
     }
 
-    if (!allowedRoles.has(role)) {
+    if (!allowedRoles.has(role.toUpperCase())) {
       return res.status(400).json({ message: 'Invalid role' });
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const normalizedEmail = email.toLowerCase();
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
     if (existingUser) {
       return res.status(409).json({ message: 'Email already registered' });
@@ -63,11 +65,11 @@ async function signup(req, res, next) {
 
     const user = await prisma.user.create({
       data: {
-        email: email.toLowerCase(),
+        email: normalizedEmail,
         passwordHash,
         fullName,
         phoneNumber,
-        role
+        role: role.toUpperCase()
       }
     });
 
@@ -89,7 +91,7 @@ async function signup(req, res, next) {
     });
 
     return res.status(201).json({
-      message: 'Account created successfully. Please verify your email with the OTP sent to Gmail.',
+      message: 'Account created successfully. Please verify your email with the OTP sent to your inbox.',
       user: sanitizeUser(user),
       verificationRequired: true
     });
@@ -106,14 +108,15 @@ async function login(req, res, next) {
       return res.status(400).json({ message: 'email and password are required' });
     }
 
-    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const normalizedEmail = email.toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     if (!user.isEmailVerified) {
-      return res.status(403).json({ message: 'Email not verified. Please verify your Gmail OTP first.' });
+      return res.status(403).json({ message: 'Email not verified. Please verify your email OTP first.' });
     }
 
     if (user.isBlocked) {
@@ -315,6 +318,20 @@ async function me(req, res) {
   return res.json({ user: sanitizeUser(req.user) });
 }
 
+// Update FCM push notification token for the logged-in user (from Adit)
+async function updateFcmToken(req, res, next) {
+  try {
+    const { fcmToken } = req.body;
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { fcmToken }
+    });
+    res.json({ message: 'FCM token updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   signup,
   login,
@@ -322,5 +339,6 @@ module.exports = {
   confirmRegistration,
   requestPasswordReset,
   verifyPasswordResetOtp,
-  me
+  me,
+  updateFcmToken
 };

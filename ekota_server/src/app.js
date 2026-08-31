@@ -1,8 +1,20 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const authRoutes = require('./routes/authRoutes');
 const listingRoutes = require('./routes/listingRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const withdrawalRoutes = require('./routes/withdrawalRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const investmentRoutes = require('./routes/investmentRoutes');
+const rentalRoutes = require('./routes/rentalRoutes');
+const votingRoutes = require('./routes/votingRoutes');
+const warehouseRoutes = require('./routes/warehouseRoutes');
+const locationRoutes = require('./routes/locationRoutes');
+const watchlistRoutes = require('./routes/watchlistRoutes');
+const kycRoutes = require('./routes/kycRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 function createApp() {
@@ -10,13 +22,28 @@ function createApp() {
 
   app.use(cors());
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // Serve uploaded files as static assets
+  app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'ekota-backend' });
   });
 
   app.use('/api/auth', authRoutes);
+  app.use('/api', investmentRoutes);
   app.use('/api', listingRoutes);
+  app.use('/api', kycRoutes);
+  app.use('/api/uploads', uploadRoutes);
+  app.use('/api/payments', paymentRoutes);
+  app.use('/api/withdrawals', withdrawalRoutes);
+  app.use('/api/notifications', notificationRoutes);
+  app.use('/api', rentalRoutes);
+  app.use('/api', votingRoutes);
+  app.use('/api', warehouseRoutes);
+  app.use('/api', locationRoutes);
+  app.use('/api', watchlistRoutes);
 
   app.use(notFound);
   app.use(errorHandler);

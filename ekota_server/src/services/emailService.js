@@ -13,7 +13,10 @@ function createTransport() {
     auth: {
       user: gmailUser,
       pass: gmailAppPassword
-    }
+    },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000
   });
 }
 

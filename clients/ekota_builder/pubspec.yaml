@@ -12,6 +12,7 @@ dependencies:
 
   # networking & storage
   http: ^1.2.0
+  flutter_dotenv: ^5.1.2
   # state management
   provider: ^6.1.2
 
@@ -28,8 +29,13 @@ dependencies:
   uuid: ^4.5.1
   shared_preferences: ^2.5.5
 
+  # KYC — Didit identity verification SDK (from Abrar)
+  didit_sdk: ^4.5.3
+
 flutter:
   uses-material-design: true
+  assets:
+    - .env
 
 dev_dependencies:
   flutter_test:

@@ -6,6 +6,7 @@ import '../config/app_config.dart';
 import '../services/chat_socket_service.dart';
 import '../theme/app_theme.dart';
 import 'investor_withdrawal_screen.dart';
+import 'syndicate_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -230,14 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class SyndicateHomeScreen extends StatelessWidget {
-  const SyndicateHomeScreen({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return const InvestorWithdrawalScreen();
-  }
-}
 
 class SyndicateSignupScreen extends StatefulWidget {
   const SyndicateSignupScreen({super.key});

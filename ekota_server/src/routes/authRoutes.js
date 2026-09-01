@@ -8,7 +8,8 @@ const {
   confirmRegistration,
   requestPasswordReset,
   verifyPasswordResetOtp,
-  me
+  me,
+  updateFcmToken
 } = require('../controllers/authController');
 
 const router = express.Router();
@@ -20,5 +21,6 @@ router.post('/registration/confirm', confirmRegistration);
 router.post('/password-reset/request', requestPasswordReset);
 router.post('/password-reset/reset-password', verifyPasswordResetOtp);
 router.get('/me', authenticate, me);
+router.put('/fcm-token', authenticate, updateFcmToken);
 
 module.exports = router;

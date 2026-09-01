@@ -12,6 +12,7 @@ router.all('/ipn', paymentController.handleIPN);
 // Protected routes requiring authentication
 router.use(authenticate);
 
+router.post('/wallet', paymentController.payWithWallet);
 router.post('/initiate', paymentController.initiatePayment);
 router.get('/my', paymentController.getUserPayments);
 router.get('/admin/all', paymentController.getAllPayments);

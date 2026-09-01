@@ -6,7 +6,7 @@ const { getJwtConfig } = require('../config/jwt');
 const { generateOtp } = require('../utils/otp');
 const { sendOtpEmail } = require('../services/emailService');
 
-const allowedRoles = new Set(['ADMIN', 'RENTER', 'INVESTOR', 'PRODUCER']);
+const allowedSignupRoles = new Set(['RENTER', 'INVESTOR', 'PRODUCER']);
 
 function createToken(user) {
   const { secret, expiresIn } = getJwtConfig();
@@ -49,7 +49,12 @@ async function signup(req, res, next) {
       return res.status(400).json({ message: 'email, password, and fullName are required' });
     }
 
-    if (!allowedRoles.has(role.toUpperCase())) {
+    const requestedRole = (role || 'PRODUCER').toUpperCase();
+    if (requestedRole === 'ADMIN' || requestedRole === 'SUPER_ADMIN') {
+      return res.status(403).json({ message: 'Public registration for ADMIN role is strictly forbidden.' });
+    }
+
+    if (!allowedSignupRoles.has(requestedRole)) {
       return res.status(400).json({ message: 'Invalid role' });
     }
 
@@ -299,6 +304,19 @@ async function me(req, res) {
   return res.json({ user: sanitizeUser(req.user) });
 }
 
+async function updateFcmToken(req, res, next) {
+  try {
+    const { fcmToken } = req.body;
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { fcmToken }
+    });
+    res.json({ message: 'FCM token updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   signup,
   login,
@@ -306,5 +324,6 @@ module.exports = {
   confirmRegistration,
   requestPasswordReset,
   verifyPasswordResetOtp,
-  me
+  me,
+  updateFcmToken
 };

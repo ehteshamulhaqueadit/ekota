@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import 'payment_screen.dart';
+import 'public_home_screen.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -47,6 +49,10 @@ class _LoginScreenState extends State<LoginScreen> {
            await prefs.setString('user_role', data['user']['role']);
         }
         
+        // Register FCM token with backend
+        _registerFcmToken(data['token']);
+
+
         if (!mounted) return;
         Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const PublicHomeScreen()));
       } else {
@@ -64,6 +70,23 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = e.toString());
     } finally {
       setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _registerFcmToken(String authToken) async {
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken == null) return;
+      await http.put(
+        Uri.parse('${AppConfig.apiBaseUrl}/auth/fcm-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode({'fcmToken': fcmToken}),
+      );
+    } catch (e) {
+      debugPrint('Failed to register FCM token: $e');
     }
   }
 
@@ -124,14 +147,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class PublicHomeScreen extends StatelessWidget {
-  const PublicHomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const PaymentScreen();
-  }
-}
 
 class PublicSignupScreen extends StatefulWidget {
   const PublicSignupScreen({super.key});
@@ -170,6 +185,8 @@ class _PublicSignupScreenState extends State<PublicSignupScreen> {
         if (data['token'] != null) {
           await prefs.setString('auth_token', data['token']);
         }
+
+
         if (!mounted) return;
         Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const PublicHomeScreen()));
       } else {

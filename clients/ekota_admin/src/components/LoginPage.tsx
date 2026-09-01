@@ -131,51 +131,12 @@ export default function LoginPage({ onAuthenticated }: LoginPageProps) {
       body: JSON.stringify(payload),
     })) as AuthSession;
 
-    localStorage.setItem('ekota_admin_session', JSON.stringify(session));
-    onAuthenticated(session);
-  }
-
-  async function handleSignup() {
-    const payload: SignupPayload = {
-      email: form.email.trim(),
-      password: form.password,
-      fullName: form.fullName.trim(),
-      phoneNumber: form.phoneNumber.trim(),
-      role: form.role,
-    };
-
-    const response = (await apiRequest('/auth/signup', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    })) as { message?: string; token?: string; user?: any };
-
-    if (response.token && response.user) {
-      const session: AuthSession = {
-        token: response.token,
-        user: response.user,
-      };
-      localStorage.setItem('ekota_admin_session', JSON.stringify(session));
-      onAuthenticated(session);
-    } else {
-      setSuccess('Account created successfully. You can sign in now.');
-      navigate('/login');
+    if (!session || !session.user || session.user.role !== 'ADMIN') {
+      throw new Error('Access denied: Only system administrators can access this portal.');
     }
-  }
 
-  async function handleVerify() {
-    navigate('/login');
-  }
-
-  async function handleResendVerification() {
-    setSuccess('OTP verification is disabled in dev mode.');
-  }
-
-  async function handleResetRequest() {
-    navigate('/login');
-  }
-
-  async function handleResetPassword() {
-    navigate('/login');
+    sessionStorage.setItem('ekota_admin_session', JSON.stringify(session));
+    onAuthenticated(session);
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -185,13 +146,7 @@ export default function LoginPage({ onAuthenticated }: LoginPageProps) {
     setIsSubmitting(true);
 
     try {
-      if (mode === 'login') {
-        await handleLogin();
-      } else if (mode === 'signup') {
-        await handleSignup();
-      } else {
-        navigate('/login');
-      }
+      await handleLogin();
     } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -203,9 +158,8 @@ export default function LoginPage({ onAuthenticated }: LoginPageProps) {
     <main className="auth-shell">
       <section className="auth-card">
         <p className="eyebrow">Ekota Admin</p>
-        <h1>{title}</h1>
-        <p className="lede">{lead}</p>
-
+        <h1>Sign in to continue</h1>
+        <p className="lede">Use your verified Ekota Admin credentials to access the portal.</p>
 
         <form onSubmit={handleSubmit} className="auth-form">
           <label>
@@ -214,119 +168,27 @@ export default function LoginPage({ onAuthenticated }: LoginPageProps) {
               type="email"
               value={form.email}
               onChange={(event) => updateField('email', event.target.value)}
-              placeholder="you@example.com"
+              placeholder="admin@ekota.com"
               required
             />
           </label>
 
-          {mode === 'signup' ? (
-            <>
-              <label>
-                Full name
-                <input
-                  type="text"
-                  value={form.fullName}
-                  onChange={(event) => updateField('fullName', event.target.value)}
-                  placeholder="Amina Rahman"
-                  required
-                />
-              </label>
-
-              <label>
-                Phone number
-                <input
-                  type="tel"
-                  value={form.phoneNumber}
-                  onChange={(event) => updateField('phoneNumber', event.target.value)}
-                  placeholder="01700000000"
-                />
-              </label>
-
-              <label>
-                Role
-                <select value={form.role} onChange={(event) => updateField('role', event.target.value)}>
-                  {roles.map((role) => (
-                    <option key={role} value={role}>{role}</option>
-                  ))}
-                </select>
-              </label>
-            </>
-          ) : null}
-
-          {mode === 'login' || mode === 'signup' ? (
-            <label>
-              Password
-              <input
-                type="password"
-                value={form.password}
-                onChange={(event) => updateField('password', event.target.value)}
-                placeholder="••••••••"
-                required
-              />
-            </label>
-          ) : null}
-
-          {mode === 'reset-password' ? (
-            <label>
-              New password
-              <input
-                type="password"
-                value={form.newPassword}
-                onChange={(event) => updateField('newPassword', event.target.value)}
-                placeholder="Enter a new password"
-                required
-              />
-            </label>
-          ) : null}
-
-          {mode === 'verify' || mode === 'reset-password' ? (
-            <label>
-              OTP code
-              <input
-                type="text"
-                value={form.otpCode}
-                onChange={(event) => updateField('otpCode', event.target.value)}
-                placeholder="123456"
-                inputMode="numeric"
-                required
-              />
-            </label>
-          ) : null}
+          <label>
+            Password
+            <input
+              type="password"
+              value={form.password}
+              onChange={(event) => updateField('password', event.target.value)}
+              placeholder="••••••••"
+              required
+            />
+          </label>
 
           {error ? <p className="auth-error">{error}</p> : null}
-          {success ? <p className="auth-success">{success}</p> : null}
 
           <button type="submit" disabled={!canSubmit || isSubmitting}>
-            {isSubmitting
-              ? 'Submitting…'
-              : mode === 'login'
-                ? 'Sign in'
-                : mode === 'signup'
-                  ? 'Create account'
-                  : mode === 'verify'
-                    ? 'Verify email'
-                    : mode === 'reset-request'
-                      ? 'Send reset OTP'
-                      : 'Reset password'}
+            {isSubmitting ? 'Signing in…' : 'Sign in'}
           </button>
-
-          <div className="auth-links" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}>
-            {mode === 'login' ? (
-              <>
-                <button type="button" className="link-button" onClick={() => switchMode('reset-request')}>Forgot Password?</button>
-                <button type="button" className="link-button" onClick={() => switchMode('signup')}>Sign up</button>
-              </>
-            ) : mode === 'signup' ? (
-              <button type="button" className="link-button" style={{ width: '100%', textAlign: 'center' }} onClick={() => switchMode('login')}>Already have an account? Sign in</button>
-            ) : mode === 'reset-request' || mode === 'reset-password' ? (
-              <button type="button" className="link-button" style={{ width: '100%', textAlign: 'center' }} onClick={() => switchMode('login')}>Back to sign in</button>
-            ) : mode === 'verify' ? (
-              <>
-                <button type="button" className="link-button" onClick={() => switchMode('login')}>Back to sign in</button>
-                <button type="button" className="link-button" onClick={() => handleResendVerification()}>Resend OTP</button>
-              </>
-            ) : null}
-          </div>
         </form>
       </section>
     </main>

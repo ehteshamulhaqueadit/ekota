@@ -6,8 +6,8 @@ interface Payment {
   tranId: string;
   amount: number;
   currency: string;
-  paymentType: 'RENT' | 'INVESTMENT';
-  status: 'PENDING' | 'VALIDATED' | 'FAILED' | 'CANCELLED';
+  paymentType: 'RENT' | 'INVESTMENT' | 'DEPOSIT';
+  status: 'PENDING' | 'PENDING_ADMIN_VALIDATION' | 'VALIDATED' | 'FAILED' | 'CANCELLED';
   cardType?: string;
   createdAt: string;
   user?: {
@@ -128,8 +128,8 @@ export const PaymentAuditLog: React.FC = () => {
                   <td style={{ padding: '12px 16px' }}>
                     <span style={{
                       padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
-                      background: p.paymentType === 'RENT' ? '#e0f2fe' : '#fef3c7',
-                      color: p.paymentType === 'RENT' ? '#0369a1' : '#b45309',
+                      background: p.paymentType === 'RENT' ? '#e0f2fe' : p.paymentType === 'DEPOSIT' ? '#d1fae5' : '#fef3c7',
+                      color: p.paymentType === 'RENT' ? '#0369a1' : p.paymentType === 'DEPOSIT' ? '#047857' : '#b45309',
                     }}>
                       {p.paymentType}
                     </span>
@@ -140,14 +140,14 @@ export const PaymentAuditLog: React.FC = () => {
                   <td style={{ padding: '12px 16px' }}>
                     <span style={{
                       padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700,
-                      background: p.status === 'VALIDATED' ? '#d1fae5' : p.status === 'PENDING' ? '#fef3c7' : '#fee2e2',
-                      color: p.status === 'VALIDATED' ? '#059669' : p.status === 'PENDING' ? '#d97706' : '#dc2626',
+                      background: p.status === 'VALIDATED' ? '#d1fae5' : p.status.includes('PENDING') ? '#fef3c7' : '#fee2e2',
+                      color: p.status === 'VALIDATED' ? '#059669' : p.status.includes('PENDING') ? '#d97706' : '#dc2626',
                     }}>
                       {p.status}
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px' }}>
-                    {p.status === 'PENDING' ? (
+                    {p.status.includes('PENDING') ? (
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <button
                           onClick={() => handleAdminAction(p.id, 'validate')}

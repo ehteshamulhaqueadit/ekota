@@ -20,6 +20,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final _rentalPrice = TextEditingController();
   final _description = TextEditingController();
   final _specifications = TextEditingController();
+  final _weightKg = TextEditingController();
+  final _sizeCubicCm = TextEditingController();
 
   List<PickedMedia> _media = [];
   ProductionTimeType _prodType = ProductionTimeType.instant;
@@ -34,6 +36,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
     _rentalPrice.dispose();
     _description.dispose();
     _specifications.dispose();
+    _weightKg.dispose();
+    _sizeCubicCm.dispose();
     super.dispose();
   }
 
@@ -78,6 +82,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
                 ? 'instant'
                 : 'scheduled',
         'productionDays': _prodDays,
+        if (_weightKg.text.isNotEmpty) 'weightKg': double.tryParse(_weightKg.text),
+        if (_sizeCubicCm.text.isNotEmpty) 'sizeCubicCm': double.tryParse(_sizeCubicCm.text),
       });
 
       if (mounted) {
@@ -160,6 +166,22 @@ class _AddItemScreenState extends State<AddItemScreen> {
                   maxLines: 2,
                   decoration: const InputDecoration(
                       hintText: 'Technical details (optional)')),
+              const SizedBox(height: 20),
+
+              _label('Weight (kg)'),
+              const SizedBox(height: 6),
+              TextFormField(
+                  controller: _weightKg,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(hintText: 'e.g. 2.5 (for warehouse fee)')),
+              const SizedBox(height: 16),
+
+              _label('Size (cubic cm)'),
+              const SizedBox(height: 6),
+              TextFormField(
+                  controller: _sizeCubicCm,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(hintText: 'e.g. 5000 (for warehouse fee)')),
               const SizedBox(height: 20),
 
               MediaPicker(onChanged: (m) => setState(() => _media = m)),

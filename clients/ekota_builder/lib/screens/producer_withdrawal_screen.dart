@@ -90,7 +90,7 @@ class _ProducerWithdrawalScreenState extends State<ProducerWithdrawalScreen> {
     }
 
     if (amt > _availableBalance) {
-      setState(() => _error = 'Insufficient available balance (Max ৳$_availableBalance BDT)');
+      setState(() => _error = 'Withdrawal Denied: Requested amount (৳${amt.toStringAsFixed(2)}) exceeds your available wallet balance (৳${_availableBalance.toStringAsFixed(2)} BDT).');
       return;
     }
 

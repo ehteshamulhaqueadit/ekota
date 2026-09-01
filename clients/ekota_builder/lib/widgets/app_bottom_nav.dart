@@ -17,9 +17,10 @@ class AppBottomNav extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _navItem(context, Icons.home_outlined, 'Home', 0, '/home'),
+          _navItem(context, Icons.forum_outlined, 'Chat', 1, '/producer/chat'),
           _navItem(context, Icons.work_outline, 'Your Items', 2, '/producer/items'),
           const SizedBox(width: 48), // space for FAB
-          _navItem(context, Icons.account_balance_wallet_outlined, 'Withdrawals', 3, '/producer/withdrawals'),
+          _navItem(context, Icons.account_balance_wallet_outlined, 'Wallet', 3, '/producer/wallet'),
         ],
       ),
     );

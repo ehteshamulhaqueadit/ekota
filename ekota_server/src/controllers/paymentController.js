@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const sslcommerzService = require('../services/sslcommerzService');
+const walletService = require('../services/walletService');
 const {
   sendPaymentSuccessEmail,
   sendPaymentFailedEmail
@@ -24,15 +25,45 @@ async function processPaymentValidation(tranId, valId, payload) {
   const validationResult = await sslcommerzService.validateTransaction(valId || payment.valId);
 
   if (validationResult.isValid || payload?.status === 'VALIDATED' || payload?.status === 'VALID') {
-    const updatedPayment = await prisma.payment.update({
+    if (payment.paymentType === 'DEPOSIT') {
+      // Mark as PENDING_ADMIN_VALIDATION until Admin validates the deposit
+      const updatedPayment = await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'PENDING_ADMIN_VALIDATION',
+          valId: payload.val_id || payload.valId || null,
+          bankTranId: payload.bank_tran_id || payload.bankTranId || null,
+          cardType: payload.card_type || payload.cardType || 'SSLCommerz',
+          metadata: payload,
+        },
+        include: { user: true, listing: true },
+      });
+
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: payment.userId,
+            title: 'Deposit Received - Awaiting Admin Validation',
+            message: `Your deposit of ৳${payment.amount} (Tran ID: ${payment.tranId}) via SSLCommerz was received. It is now awaiting Admin validation before crediting your wallet.`,
+            type: 'PAYMENT_PENDING',
+          },
+        });
+      } catch (_e) {}
+
+      return updatedPayment;
+    }
+
+    // Atomically credit wallet, create ledger entry, and update payment status to VALIDATED
+    await walletService.creditWalletForPayment(
+      payment.id,
+      payment.tranId,
+      payment.amount,
+      payment.userId,
+      payload
+    );
+
+    const updatedPayment = await prisma.payment.findUnique({
       where: { id: payment.id },
-      data: {
-        status: 'VALIDATED',
-        valId: valId || validationResult.valId || null,
-        bankTranId: payload?.bank_tran_id || validationResult.bankTranId || null,
-        cardType: payload?.card_type || validationResult.cardType || 'SSLCommerz Gateway',
-        metadata: payload,
-      },
       include: { user: true, listing: true },
     });
 
@@ -118,7 +149,7 @@ async function processPaymentValidation(tranId, valId, payload) {
  */
 async function initiatePayment(req, res, next) {
   try {
-    const { amount, paymentType = 'RENT', listingId, productName = 'Ekota Service Fee' } = req.body;
+    const { amount, paymentType = 'RENT', listingId, productName = 'Ekota Service Fee', appSource } = req.body;
     const user = req.user || { id: '39412f75-dab4-4476-bb11-04e68b1fc262', fullName: 'Ekota Member', email: 'user@ekota.com' };
 
     if (!amount || isNaN(amount) || Number(amount) <= 0) {
@@ -126,8 +157,8 @@ async function initiatePayment(req, res, next) {
     }
 
     const normalizedPaymentType = paymentType.toUpperCase();
-    if (!['RENT', 'INVESTMENT'].includes(normalizedPaymentType)) {
-      return res.status(400).json({ message: 'Invalid paymentType. Must be RENT or INVESTMENT' });
+    if (!['RENT', 'INVESTMENT', 'DEPOSIT'].includes(normalizedPaymentType)) {
+      return res.status(400).json({ message: 'Invalid paymentType. Must be RENT, INVESTMENT, or DEPOSIT' });
     }
 
     if (listingId) {
@@ -145,7 +176,12 @@ async function initiatePayment(req, res, next) {
 
     const tranId = `EKOTA-PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    // 1. Create Payment record in PostgreSQL FIRST with PENDING status
+    const resolvedAppSource = (appSource || '').toLowerCase() || 
+      (normalizedPaymentType === 'INVESTMENT' ? 'syndicate' : 
+       normalizedPaymentType === 'RENT' ? 'public' : 
+       (user.role === 'INVESTOR' ? 'syndicate' : user.role === 'PRODUCER' ? 'builder' : 'public'));
+
+    // 1. Create Payment record in PostgreSQL FIRST with PENDING status & appSource metadata
     const payment = await prisma.payment.create({
       data: {
         userId: user.id,
@@ -155,6 +191,7 @@ async function initiatePayment(req, res, next) {
         currency: 'BDT',
         paymentType: normalizedPaymentType,
         status: 'PENDING',
+        metadata: { appSource: resolvedAppSource },
       },
       include: {
         user: { select: { id: true, fullName: true, email: true, role: true } },
@@ -182,6 +219,7 @@ async function initiatePayment(req, res, next) {
     });
 
     return res.status(201).json({
+      success: true,
       message: 'Payment session initiated successfully. Status is PENDING verification.',
       paymentId: payment.id,
       tranId: payment.tranId,
@@ -228,7 +266,7 @@ async function handleIPN(req, res, next) {
 
 /**
  * Handle SSLCommerz Success Callback Redirect (Browser / Webview)
- * Renders a Beautiful, Responsive HTML Success Page
+ * Renders a Beautiful, Responsive HTML Success Page with App-Specific Return Link
  */
 async function handleSuccess(req, res, next) {
   try {
@@ -249,6 +287,29 @@ async function handleSuccess(req, res, next) {
     const paymentTypeStr = validatedPayment?.paymentType || payload.product_category || 'RENT';
     const cardTypeStr = validatedPayment?.cardType || payload.card_type || 'SSLCommerz Gateway';
     const tranIdStr = tran_id || validatedPayment?.tranId || 'EKOTA-PAY-01';
+
+    let appSource = 'public';
+    if (validatedPayment && validatedPayment.metadata && validatedPayment.metadata.appSource) {
+      appSource = String(validatedPayment.metadata.appSource).toLowerCase();
+    } else if (payload.appSource) {
+      appSource = String(payload.appSource).toLowerCase();
+    } else if (paymentTypeStr === 'INVESTMENT') {
+      appSource = 'syndicate';
+    }
+
+    let returnSchemeUrl = 'ekotapublic://payment-success';
+    let appDisplayName = 'Ekota Public App';
+
+    if (appSource === 'syndicate') {
+      returnSchemeUrl = 'ekotasyndicate://payment-success';
+      appDisplayName = 'Ekota Syndicate App';
+    } else if (appSource === 'builder' || appSource === 'producer') {
+      returnSchemeUrl = 'ekotabuilder://payment-success';
+      appDisplayName = 'Ekota Builder App';
+    } else {
+      returnSchemeUrl = 'ekotapublic://payment-success';
+      appDisplayName = 'Ekota Public App';
+    }
 
     return res.send(`
       <!DOCTYPE html>
@@ -310,29 +371,159 @@ async function handleSuccess(req, res, next) {
                 <span class="badge">VALIDATED</span>
               </div>
             </div>
-            <button class="btn" onclick="handleReturnApp()">Return to Ekota App</button>
+            <button class="btn" onclick="handleReturnApp()">Return to ${appDisplayName}</button>
             <p id="return-note" style="display:none;margin-top:14px;font-size:13px;color:#047857;text-align:center;font-weight:600;background:#d1fae5;padding:10px;border-radius:10px;">
-              ✓ Transaction Verified! You can safely close this browser window and open your Ekota App.
+              ✓ Transaction Verified! Returning to ${appDisplayName}...
             </p>
           </div>
         </div>
         <script>
           function handleReturnApp() {
             document.getElementById("return-note").style.display = "block";
+            const schemeUrl = "${returnSchemeUrl}";
             try {
-              if (window.opener) { window.close(); }
+              window.location.href = schemeUrl;
             } catch(e) {}
-            try {
-              window.location.href = "ekota://payment-success";
-            } catch(e) {}
+            if ("${appSource}" === "public" || "${appSource}" === "rental") {
+              setTimeout(function() {
+                try { window.location.href = "ekota://payment-success"; } catch(e) {}
+              }, 300);
+            }
             setTimeout(function() {
               try { window.close(); } catch(e) {}
-            }, 800);
+            }, 1000);
           }
         </script>
       </body>
       </html>
     `);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * Handle SSLCommerz Fail Callback Redirect
+ */
+async function handleFail(req, res, next) {
+  try {
+    const payload = { ...req.body, ...req.query };
+    const { tran_id } = payload;
+
+    if (tran_id) {
+      try {
+        await prisma.payment.updateMany({
+          where: { tranId: tran_id },
+          data: { status: 'FAILED', metadata: payload },
+        });
+      } catch (_e) {}
+    }
+
+    return res.status(400).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Failed - Ekota</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+          body { background: linear-gradient(135deg, #7f1d1d 0%, #dc2626 50%, #450a0a 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; color: #111827; }
+          .card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #ef4444, #dc2626); padding: 36px 24px; text-align: center; color: white; }
+          .icon-circle { width: 80px; height: 80px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; }
+          .icon { color: #dc2626; font-size: 44px; font-weight: bold; }
+          .content { padding: 28px 24px; text-align: center; }
+          .btn { display: block; width: 100%; background: #dc2626; color: white; text-decoration: none; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 15px; border: none; cursor: pointer; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="header">
+            <div class="icon-circle"><span class="icon">✕</span></div>
+            <h1>Payment Failed</h1>
+            <p>Transaction ID: ${tran_id || 'N/A'}</p>
+          </div>
+          <div class="content">
+            <p style="color:#64748b;margin-bottom:10px">Your transaction was declined or failed by the gateway.</p>
+            <button class="btn" onclick="window.history.back();">Try Again / Return</button>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * Handle SSLCommerz Cancel Callback Redirect
+ */
+async function handleCancel(req, res, next) {
+  try {
+    const payload = { ...req.body, ...req.query };
+    const { tran_id } = payload;
+
+    if (tran_id) {
+      try {
+        await prisma.payment.updateMany({
+          where: { tranId: tran_id },
+          data: { status: 'CANCELLED', metadata: payload },
+        });
+      } catch (_e) {}
+    }
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Cancelled - Ekota</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+          body { background: linear-gradient(135deg, #1e293b 0%, #475569 50%, #0f172a 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; color: #111827; }
+          .card { background: #ffffff; width: 100%; max-width: 480px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #64748b, #475569); padding: 36px 24px; text-align: center; color: white; }
+          .icon-circle { width: 80px; height: 80px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; }
+          .icon { color: #475569; font-size: 44px; font-weight: bold; }
+          .content { padding: 28px 24px; text-align: center; }
+          .btn { display: block; width: 100%; background: #475569; color: white; text-decoration: none; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 15px; border: none; cursor: pointer; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="header">
+            <div class="icon-circle"><span class="icon">!</span></div>
+            <h1>Payment Cancelled</h1>
+            <p>Transaction ID: ${tran_id || 'N/A'}</p>
+          </div>
+          <div class="content">
+            <p style="color:#64748b;margin-bottom:10px">You have cancelled the payment session.</p>
+            <button class="btn" onclick="window.history.back();">Return to Ekota App</button>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.json({ payments: [] });
+    }
+
+    const payments = await prisma.payment.findMany({
+      where: { userId },
+      include: {
+        user: { select: { id: true, fullName: true, email: true, role: true } },
+        listing: { select: { id: true, assetName: true, category: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return res.json({ payments });
   } catch (error) {
     return next(error);
   }
@@ -521,9 +712,10 @@ async function getAllPayments(req, res, next) {
 async function adminValidatePayment(req, res, next) {
   try {
     const { id } = req.params;
+    const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id);
 
     const dbMatch = await prisma.payment.findFirst({
-      where: { OR: [{ id: id }, { tranId: id }] },
+      where: isUuid ? { id: id } : { tranId: id },
       include: { user: true },
     });
 
@@ -531,9 +723,17 @@ async function adminValidatePayment(req, res, next) {
       return res.status(404).json({ success: false, message: 'Payment record not found' });
     }
 
-    const updatedPayment = await prisma.payment.update({
+    // Atomically credit wallet, update payment to VALIDATED, and create transaction ledger entry
+    await walletService.creditWalletForPayment(
+      dbMatch.id,
+      dbMatch.tranId,
+      dbMatch.amount,
+      dbMatch.userId,
+      dbMatch.metadata || {}
+    );
+
+    const updatedPayment = await prisma.payment.findUnique({
       where: { id: dbMatch.id },
-      data: { status: 'VALIDATED' },
       include: { user: true },
     });
 
@@ -541,8 +741,8 @@ async function adminValidatePayment(req, res, next) {
       await prisma.notification.create({
         data: {
           userId: updatedPayment.userId,
-          title: 'Payment Validated',
-          message: `Your payment of ৳${updatedPayment.amount} (${updatedPayment.paymentType}) with Tran ID ${updatedPayment.tranId} has been verified and validated by Admin.`,
+          title: 'Deposit Validated & Wallet Credited',
+          message: `Your deposit of ৳${updatedPayment.amount} (Tran ID: ${updatedPayment.tranId}) has been validated by Admin and credited to your wallet balance.`,
           type: 'PAYMENT_SUCCESS',
         },
       });
@@ -560,7 +760,7 @@ async function adminValidatePayment(req, res, next) {
 
     return res.json({
       success: true,
-      message: `Payment ${updatedPayment.tranId} validated successfully by Admin`,
+      message: `Payment ${updatedPayment.tranId} validated successfully by Admin. Wallet credited.`,
       payment: updatedPayment,
     });
   } catch (error) {
@@ -576,8 +776,10 @@ async function adminRejectPayment(req, res, next) {
     const { id } = req.params;
     const { note } = req.body || {};
 
+    const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id);
+
     const dbMatch = await prisma.payment.findFirst({
-      where: { OR: [{ id: id }, { tranId: id }] },
+      where: isUuid ? { id: id } : { tranId: id },
       include: { user: true },
     });
 
@@ -622,7 +824,39 @@ async function adminRejectPayment(req, res, next) {
   }
 }
 
+/**
+ * Pay for Renter / Ekota Service using Wallet Balance
+ * POST /api/payments/wallet
+ */
+async function payWithWallet(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const { amount, description, listingId } = req.body;
+
+    const result = await walletService.payFromWallet({
+      userId,
+      amount,
+      description: description || 'Renter Payment from Ekota Wallet',
+      reference: `EKOTA-RENT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      metadata: { listingId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Payment completed successfully using wallet balance.',
+      transactionId: result.transactionId,
+      newBalance: result.newBalance,
+    });
+  } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
+    return next(error);
+  }
+}
+
 module.exports = {
+  processPaymentValidation,
   initiatePayment,
   handleSuccess,
   handleFail,
@@ -633,4 +867,5 @@ module.exports = {
   getAllPayments,
   adminValidatePayment,
   adminRejectPayment,
+  payWithWallet,
 };

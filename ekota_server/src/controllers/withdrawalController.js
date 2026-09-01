@@ -1,39 +1,39 @@
 const prisma = require('../config/prisma');
+const walletService = require('../services/walletService');
 const {
   sendWithdrawalApprovedEmail,
   sendWithdrawalRejectedEmail,
 } = require('../services/emailService');
 
 /**
- * Get Producer Wallet Balance from PostgreSQL
+ * Get User Wallet Balance from PostgreSQL
  * GET /api/withdrawals/balance
  */
 async function getProducerBalance(req, res, next) {
   try {
-    const producerId = req.user?.id || '10000000-0000-0000-0000-000000000001';
-
-    let balanceRecord = await prisma.producerBalance.findUnique({
-      where: { producerId },
-    });
-
-    if (!balanceRecord) {
-      // Auto-create initial ProducerBalance record in PostgreSQL if not present
-      balanceRecord = await prisma.producerBalance.create({
-        data: {
-          producerId,
-          totalEarnings: 854000.00,
-          availableBalance: 245000.00,
-          pendingWithdrawal: 45000.00,
-          totalWithdrawn: 564000.00,
-        },
-      });
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
+    const wallet = await walletService.getOrCreateWallet(userId);
+    const availableBalance = Number(wallet.balance);
+
+    const pendingRequests = await prisma.withdrawalRequest.findMany({
+      where: { producerId: userId, status: 'PENDING' },
+    });
+    const pendingWithdrawal = pendingRequests.reduce((sum, r) => sum + Number(r.amount), 0);
+
+    const approvedRequests = await prisma.withdrawalRequest.findMany({
+      where: { producerId: userId, status: 'APPROVED' },
+    });
+    const totalWithdrawn = approvedRequests.reduce((sum, r) => sum + Number(r.amount), 0);
+
     return res.json({
-      totalEarnings: Number(balanceRecord.totalEarnings),
-      availableBalance: Number(balanceRecord.availableBalance),
-      pendingWithdrawal: Number(balanceRecord.pendingWithdrawal),
-      totalWithdrawn: Number(balanceRecord.totalWithdrawn),
+      totalEarnings: availableBalance + totalWithdrawn,
+      availableBalance: availableBalance,
+      pendingWithdrawal: pendingWithdrawal,
+      totalWithdrawn: totalWithdrawn,
     });
   } catch (error) {
     return next(error);
@@ -46,45 +46,48 @@ async function getProducerBalance(req, res, next) {
  */
 async function requestWithdrawal(req, res, next) {
   try {
-    const producerId = req.user?.id || '10000000-0000-0000-0000-000000000001';
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
     const { amount, method, paymentMethod, accountNumber, accountDetails } = req.body;
     const reqAmount = Number(amount);
 
     if (!reqAmount || isNaN(reqAmount) || reqAmount <= 0) {
-      return res.status(400).json({ message: 'Valid withdrawal amount is required' });
+      return res.status(400).json({ success: false, message: 'Valid withdrawal amount is required' });
     }
 
-    // 1. Fetch current ProducerBalance from PostgreSQL
-    let balanceRecord = await prisma.producerBalance.findUnique({
-      where: { producerId },
-    });
+    // 1. Fetch user's actual Wallet from PostgreSQL
+    const wallet = await walletService.getOrCreateWallet(userId);
+    const availableBal = Number(wallet.balance);
 
-    if (!balanceRecord) {
-      balanceRecord = await prisma.producerBalance.create({
-        data: {
-          producerId,
-          totalEarnings: 854000.00,
-          availableBalance: 245000.00,
-          pendingWithdrawal: 45000.00,
-          totalWithdrawn: 564000.00,
-        },
-      });
-    }
-
-    const availableBal = Number(balanceRecord.availableBalance);
+    // 2. Strict Check: Automatic Denial if requested amount exceeds wallet balance
     if (reqAmount > availableBal) {
       return res.status(400).json({
-        message: `Insufficient available balance. Max available: ৳${availableBal.toLocaleString('en-BD')} BDT`,
+        success: false,
+        message: `Withdrawal Denied: Requested amount (৳${reqAmount.toLocaleString('en-BD')} BDT) exceeds your available wallet balance (৳${availableBal.toLocaleString('en-BD')} BDT).`,
       });
     }
 
     const chosenMethod = (method || paymentMethod || 'BKASH').toUpperCase();
-    const accNumber = accountNumber || accountDetails?.accountNumber || '01711-223344';
+    const accNumber = accountNumber || accountDetails?.accountNumber || '—';
 
-    // 2. Create WithdrawalRequest record in PostgreSQL
+    // 3. Atomically deduct requested amount from user's Wallet balance
+    const updatedWallet = await prisma.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: availableBal - reqAmount },
+    });
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { walletBalance: availableBal - reqAmount },
+    });
+
+    // 4. Create WithdrawalRequest record in PostgreSQL
     const newRequest = await prisma.withdrawalRequest.create({
       data: {
-        producerId,
+        producerId: userId,
         amount: reqAmount,
         method: chosenMethod,
         accountDetails: accountDetails || { accountNumber: accNumber },
@@ -92,15 +95,6 @@ async function requestWithdrawal(req, res, next) {
       },
       include: {
         producer: { select: { id: true, fullName: true, email: true, phoneNumber: true, kycStatus: true } },
-      },
-    });
-
-    // 3. Update ProducerBalance in PostgreSQL (deduct available, add to pending)
-    const updatedBalance = await prisma.producerBalance.update({
-      where: { producerId },
-      data: {
-        availableBalance: { decrement: reqAmount },
-        pendingWithdrawal: { increment: reqAmount },
       },
     });
 
@@ -113,10 +107,10 @@ async function requestWithdrawal(req, res, next) {
         accountNumber: accNumber,
       },
       balance: {
-        totalEarnings: Number(updatedBalance.totalEarnings),
-        availableBalance: Number(updatedBalance.availableBalance),
-        pendingWithdrawal: Number(updatedBalance.pendingWithdrawal),
-        totalWithdrawn: Number(updatedBalance.totalWithdrawn),
+        totalEarnings: Number(updatedWallet.balance),
+        availableBalance: Number(updatedWallet.balance),
+        pendingWithdrawal: reqAmount,
+        totalWithdrawn: 0,
       },
     });
   } catch (error) {
@@ -335,20 +329,16 @@ async function rejectWithdrawal(req, res, next) {
       include: { producer: true },
     });
 
-    // 2. Restore amount back to availableBalance in PostgreSQL
-    const updatedBalance = await prisma.producerBalance.upsert({
-      where: { producerId: targetRequest.producerId },
-      update: {
-        pendingWithdrawal: { decrement: reqAmount },
-        availableBalance: { increment: reqAmount },
-      },
-      create: {
-        producerId: targetRequest.producerId,
-        totalEarnings: reqAmount,
-        availableBalance: reqAmount,
-        pendingWithdrawal: 0,
-        totalWithdrawn: 0,
-      },
+    // 2. Restore amount back to user's Wallet balance in PostgreSQL
+    let wallet = await walletService.getOrCreateWallet(targetRequest.producerId);
+    const restoredBal = Number(wallet.balance) + reqAmount;
+    const updatedWallet = await prisma.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: restoredBal },
+    });
+    await prisma.user.update({
+      where: { id: targetRequest.producerId },
+      data: { walletBalance: restoredBal },
     });
 
     // 3. Create Notification in PostgreSQL

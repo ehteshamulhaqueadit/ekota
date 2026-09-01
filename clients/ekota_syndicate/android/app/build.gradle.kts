@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.ekota_syndicate"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

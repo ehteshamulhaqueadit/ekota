@@ -3,10 +3,15 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
+import 'screens/syndicate_home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: '.env');
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    debugPrint('dotenv load warning: $e');
+  }
   runApp(const EkotaSyndicateApp());
 }
 
@@ -49,3 +54,4 @@ class _EkotaSyndicateAppState extends State<EkotaSyndicateApp> {
     );
   }
 }
+

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/listing_provider.dart';
+import '../models/chat_message_model.dart';
+import 'chat_screen.dart';
 import '../theme/app_colors.dart';
 import '../widgets/media_carousel.dart';
 import '../widgets/production_time_badge.dart';
@@ -155,6 +157,45 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
                         ),
 
                         const SizedBox(height: 8),
+
+                        // Join Co-Owner Chat Thread
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              final thread = SyndicateThreadModel(
+                                id: listing.id,
+                                assetName: listing.assetName,
+                                category: 'Agricultural Machinery',
+                                fundingTarget: listing.fundingTarget,
+                                rentalPrice: 1500,
+                                currentFunding: listing.fundingTarget * (listing.fundingProgressPercent / 100),
+                                fundingPercentage: listing.fundingProgressPercent.toInt(),
+                                imageUrls: listing.imageUrls,
+                                producerName: 'Producer',
+                                status: 'active',
+                              );
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => BuilderChatScreen(thread: thread),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.forum_outlined, color: Colors.white),
+                            label: const Text(
+                              'Join Investor Chat Channel',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.accent,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
 
                         // Comments
                         const CommentSection(),

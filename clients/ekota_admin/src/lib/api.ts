@@ -3,7 +3,7 @@ const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api'
 export const apiBaseUrl = baseUrl.replace(/\/$/, '');
 
 function readSessionToken() {
-  const sessionRaw = localStorage.getItem('ekota_admin_session');
+  const sessionRaw = sessionStorage.getItem('ekota_admin_session');
 
   if (!sessionRaw) {
     return null;

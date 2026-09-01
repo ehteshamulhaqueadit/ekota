@@ -8,7 +8,7 @@ function getSSLCommerzConfig() {
   const baseUrl = isLive
     ? 'https://securepay.sslcommerz.com'
     : 'https://sandbox.sslcommerz.com';
-  const appUrl = process.env.APP_URL || 'http://localhost:5000';
+  const appUrl = process.env.APP_URL || 'http://192.168.1.195:5000';
 
   return {
     storeId,

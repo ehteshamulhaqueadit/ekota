@@ -52,7 +52,7 @@ function DashboardOverview({ onTabChange }: { onTabChange: (tab: 'overview' | 'p
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const savedSession = localStorage.getItem('ekota_admin_session');
+      const savedSession = sessionStorage.getItem('ekota_admin_session');
       const token = savedSession ? JSON.parse(savedSession).token : '';
 
       const res = await fetch('http://localhost:5000/api/admin/dashboard', {
@@ -349,17 +349,26 @@ function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('ekota_admin_session');
+    // Clear any legacy persistent localStorage session
+    localStorage.removeItem('ekota_admin_session');
+
+    const saved = sessionStorage.getItem('ekota_admin_session');
     if (saved) {
       try {
-        setSession(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.user && parsed.user.role === 'ADMIN') {
+          setSession(parsed);
+        } else {
+          sessionStorage.removeItem('ekota_admin_session');
+        }
       } catch {
-        localStorage.removeItem('ekota_admin_session');
+        sessionStorage.removeItem('ekota_admin_session');
       }
     }
   }, []);
 
   const handleLogout = () => {
+    sessionStorage.removeItem('ekota_admin_session');
     localStorage.removeItem('ekota_admin_session');
     setSession(null);
   };
@@ -368,12 +377,8 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={!session ? <LoginPage onAuthenticated={setSession} /> : <Navigate to="/" />} />
-        <Route path="/signup" element={!session ? <LoginPage onAuthenticated={setSession} /> : <Navigate to="/" />} />
-        <Route path="/verify" element={!session ? <LoginPage onAuthenticated={setSession} /> : <Navigate to="/" />} />
-        <Route path="/forgot-password" element={!session ? <LoginPage onAuthenticated={setSession} /> : <Navigate to="/" />} />
-        <Route path="/reset-password" element={!session ? <LoginPage onAuthenticated={setSession} /> : <Navigate to="/" />} />
-        <Route path="/" element={session ? <Dashboard onLogout={handleLogout} /> : <Navigate to="/login" />} />
-        <Route path="*" element={<Navigate to="/" />} />
+        <Route path="/" element={session && session.user && session.user.role === 'ADMIN' ? <Dashboard onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="*" element={<Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   );

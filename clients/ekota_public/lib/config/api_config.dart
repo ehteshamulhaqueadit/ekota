@@ -1,6 +1,8 @@
+import 'app_config.dart';
+
 class ApiConfig {
-  static const String baseUrl = 'http://localhost:5000/api';
-  static const String paymentApiUrl = '$baseUrl/payments';
-  static const String withdrawalApiUrl = '$baseUrl/withdrawals';
-  static const String notificationApiUrl = '$baseUrl/notifications';
+  static String get baseUrl => AppConfig.apiBaseUrl;
+  static String get paymentApiUrl => '$baseUrl/payments';
+  static String get withdrawalApiUrl => '$baseUrl/withdrawals';
+  static String get notificationApiUrl => '$baseUrl/notifications';
 }

@@ -19,11 +19,6 @@ const io = new Server(server, {
 // Attach Socket.io server for Real-Time Syndicate Chat
 initChatSocket(io);
 
-server.listen(port, () => {
-  console.log(`Ekota backend & Socket.io server running on port ${port}`);
-  seedDatabaseIfEmpty();
-});
-
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
     console.error(`Error: Port ${port} is already in use by another process.`);
@@ -31,4 +26,9 @@ server.on('error', (error) => {
     console.error('Server error:', error);
   }
   process.exit(1);
+});
+
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Ekota backend & Socket.io server running on port ${port}`);
+  seedDatabaseIfEmpty();
 });

@@ -23,6 +23,7 @@ class PaymentService {
         body: jsonEncode({
           'amount': amount,
           'paymentType': paymentType,
+          'appSource': 'public',
         }),
       );
 

@@ -99,17 +99,17 @@ async function createInvestment(req, res) {
           },
           include: { user: true }
         });
-        const { sendWatchlistAlert } = require('../services/notificationService');
-        for (const watch of watchers) {
-          await sendWatchlistAlert(
-            watch.user,
-            result.updatedListing,
-            'FUNDED',
-            `The product "${result.updatedListing.assetName}" has reached 100% funding!`
-          );
-        }
+        const { dispatchWatchlistAlerts } = require('../services/notificationService');
+        // Fast DB enqueue only — delivery happens in the background worker.
+        await dispatchWatchlistAlerts(
+          prisma,
+          watchers,
+          result.updatedListing,
+          'FUNDED',
+          'The product "{assetName}" has reached 100% funding!'
+        );
       } catch (err) {
-        console.error('Failed to send watchlist notifications:', err);
+        console.error('Failed to enqueue watchlist notifications:', err);
       }
     }
 

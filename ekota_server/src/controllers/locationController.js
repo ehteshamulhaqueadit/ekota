@@ -64,9 +64,24 @@ async function updateProductLocation(req, res) {
   const { listingId } = req.params;
   const { latitude, longitude, address } = req.body;
 
-  if (latitude == null || longitude == null) {
+  if (latitude == null || longitude == null || latitude === '' || longitude === '') {
     return res.status(400).json({ error: 'latitude and longitude are required' });
   }
+
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return res.status(400).json({ error: 'latitude and longitude must be valid numbers' });
+  }
+  if (lat < -90 || lat > 90) {
+    return res.status(400).json({ error: 'latitude must be between -90 and 90' });
+  }
+  if (lon < -180 || lon > 180) {
+    return res.status(400).json({ error: 'longitude must be between -180 and 180' });
+  }
+
+  const trimmedAddress = address && String(address).trim() ? String(address).trim().slice(0, 500) : null;
 
   try {
     // Verify the user is the active renter of this product
@@ -86,14 +101,14 @@ async function updateProductLocation(req, res) {
       where: { listingId },
       create: {
         listingId,
-        latitude,
-        longitude,
-        address: address || null
+        latitude: lat,
+        longitude: lon,
+        address: trimmedAddress
       },
       update: {
-        latitude,
-        longitude,
-        address: address || null
+        latitude: lat,
+        longitude: lon,
+        address: trimmedAddress
       }
     });
 

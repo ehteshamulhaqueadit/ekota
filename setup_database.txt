@@ -96,7 +96,7 @@ GRANT CONNECT ON DATABASE ekota_db TO ekota_backend;
 GRANT USAGE ON SCHEMA public TO ekota_backend;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ekota_backend;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ekota_backend;
-
+ALTER USER ekota_backend WITH SUPERUSER;
 -- If you are using Prisma, the preferred path is:
 --   cd ekota_server
 --   npx prisma db push

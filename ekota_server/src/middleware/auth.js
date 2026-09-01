@@ -11,26 +11,12 @@ async function authenticate(req, res, next) {
 
   try {
     const token = header.slice(7);
-    let payload = {};
-    try {
-      const { secret } = getJwtConfig();
-      payload = jwt.verify(token, secret);
-    } catch (_err) {
-      payload = { sub: '00000000-0000-0000-0000-000000000001', role: 'PRODUCER' };
-    }
+    const { secret } = getJwtConfig();
+    const payload = jwt.verify(token, secret);
 
-    let user;
-    try {
-      user = await prisma.user.findUnique({ where: { id: payload.sub } });
-    } catch (_e) {}
-
+    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) {
-      user = {
-        id: payload.sub || '00000000-0000-0000-0000-000000000001',
-        email: 'test_producer@example.com',
-        fullName: 'Test Producer',
-        role: payload.role || 'PRODUCER',
-      };
+      return res.status(401).json({ message: 'User not found' });
     }
 
     req.user = user;

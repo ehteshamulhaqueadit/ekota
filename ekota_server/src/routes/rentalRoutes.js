@@ -5,7 +5,9 @@ const {
   getRentalPool,
   rentProduct,
   returnProduct,
-  getMyRentals
+  getMyRentals,
+  getRentalPortal,
+  scanGatePass
 } = require('../controllers/rentalController');
 
 const router = express.Router();
@@ -15,5 +17,7 @@ router.get('/rental-pool', authenticate, getRentalPool);
 router.post('/rental-pool/:id/rent', authenticate, rentProduct);
 router.post('/rental-pool/:id/return', authenticate, returnProduct);
 router.get('/rentals/my', authenticate, getMyRentals);
+router.get('/rentals/:id/portal', authenticate, getRentalPortal);
+router.post('/rentals/gate-pass/scan', authenticate, scanGatePass);
 
 module.exports = router;

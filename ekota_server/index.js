@@ -12,6 +12,9 @@ const server = app.listen(port, '0.0.0.0', () => {
 const socketManager = require('./src/services/socketManager');
 socketManager.init(server);
 
+const { start: startNotificationWorker } = require('./src/services/notificationWorker');
+startNotificationWorker();
+
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
     console.error(`Error: Port ${port} is already in use by another process.`);

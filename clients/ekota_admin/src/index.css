@@ -440,3 +440,214 @@ tr:last-child td {
     display: none;
   }
 }
+
+/* ─── Warehouse Gate — Rental Gate-Pass Scanner ─────────────────────────── */
+.gate-pass-page {
+  padding: 1.5rem;
+}
+
+.gate-pass-subtitle {
+  color: var(--text-secondary);
+  margin: 0.5rem 0 1.5rem;
+  max-width: 720px;
+  line-height: 1.6;
+}
+
+.gate-pass-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .gate-pass-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gate-pass-card {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.gate-pass-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.gate-pass-card-title {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.gate-pass-hint {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin: 0 0 1rem;
+}
+
+.qr-reader-box {
+  width: 100%;
+  min-height: 260px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b1120;
+  border: 1px dashed var(--border-color-hover);
+}
+
+.qr-reader-box video {
+  width: 100% !important;
+  object-fit: cover;
+}
+
+.gate-pass-actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.gate-pass-camera-select {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.gate-pass-camera-select label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.gate-pass-camera-select select {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.gate-pass-camera-select select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.gate-pass-permission-hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.gate-pass-error {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  font-size: 0.875rem;
+}
+
+.gate-pass-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.gate-pass-input {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.gate-pass-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.gate-pass-result {
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.gate-pass-result.success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.gate-pass-result.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.gate-pass-result-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.gate-pass-result-icon {
+  font-size: 1.5rem;
+  line-height: 1.4;
+}
+
+.gate-pass-result-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+}
+
+.gate-pass-result-message {
+  color: var(--text-secondary);
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+}
+
+.gate-pass-rental-details {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.75rem;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-row span {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.detail-row strong {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.detail-sub {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 400;
+}

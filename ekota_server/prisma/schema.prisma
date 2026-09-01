@@ -1,10 +1,12 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [postgis]
 }
 
 enum UserRole {
@@ -37,6 +39,14 @@ enum StorageLocation {
 enum RentalStatus {
   AVAILABLE
   RENTED
+  RETURNED
+}
+
+// Lifecycle of a confirmed rental booking as it moves through the
+// warehouse gate (Pending Pickup -> Active -> Returned).
+enum RentalLifecycleStatus {
+  PENDING_PICKUP
+  ACTIVE
   RETURNED
 }
 
@@ -84,6 +94,9 @@ model User {
   rentPriceVotes        RentPriceVote[]
   locationSubscriptions LocationSubscription[]
   watchlists            Watchlist[]
+  pickupVerifiedRentals Rental[] @relation("RentalPickupVerifiedBy")
+  returnVerifiedRentals Rental[] @relation("RentalReturnVerifiedBy")
+  rentalEvents          RentalEvent[] @relation("RentalEventActor")
 
   @@map("users")
 }
@@ -319,10 +332,52 @@ model Rental {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  renter   User           @relation(fields: [renterId], references: [id], onDelete: Cascade)
-  poolItem RentalPoolItem @relation(fields: [poolItemId], references: [id], onDelete: Cascade)
+  // ─── Active Rental Portal ────────────────────────────────────────────────
+  // Lifecycle status shown in the renter's portal and used by the warehouse
+  // gate to decide whether a scan is a pickup or a return.
+  status            RentalLifecycleStatus @default(PENDING_PICKUP) @map("status")
+  // Expected return deadline — drives the real-time countdown timer.
+  expectedReturnAt  DateTime?             @map("expected_return_at") @db.Timestamptz(6)
+  // Digital gate-pass token encoded in the QR code shown to the renter.
+  gatePassCode      String?               @map("gate_pass_code") @db.VarChar(64)
+  // Separate return gate-pass generated when the renter requests a return.
+  // The warehouse scans THIS QR to verify and complete the return.
+  returnGatePassCode String?              @map("return_gate_pass_code") @db.VarChar(64)
+  // Last time the gate-pass QR was scanned at the warehouse.
+  gatePassScannedAt DateTime?             @map("gate_pass_scanned_at") @db.Timestamptz(6)
+  pickupAt          DateTime?             @map("pickup_at") @db.Timestamptz(6)
+  returnedAt        DateTime?             @map("returned_at") @db.Timestamptz(6)
+  pickupVerifiedById String?              @map("pickup_verified_by_id") @db.Uuid
+  returnVerifiedById String?              @map("return_verified_by_id") @db.Uuid
 
+  renter            User           @relation(fields: [renterId], references: [id], onDelete: Cascade)
+  poolItem          RentalPoolItem @relation(fields: [poolItemId], references: [id], onDelete: Cascade)
+  pickupVerifiedBy  User?          @relation("RentalPickupVerifiedBy", fields: [pickupVerifiedById], references: [id], onDelete: SetNull)
+  returnVerifiedBy  User?          @relation("RentalReturnVerifiedBy", fields: [returnVerifiedById], references: [id], onDelete: SetNull)
+  events            RentalEvent[]
+
+  @@index([renterId])
+  @@index([poolItemId])
+  @@index([gatePassCode])
+  @@index([returnGatePassCode])
   @@map("rentals")
+}
+
+// Audit trail for a rental's lifecycle: booking created, gate-pass scanned,
+// product picked up, product returned — each with the acting warehouse user.
+model RentalEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  rentalId  String   @map("rental_id") @db.Uuid
+  type      String   @db.VarChar(30) // CREATED | SCANNED | PICKED_UP | RETURNED
+  actorId   String?  @map("actor_id") @db.Uuid
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rental Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+  actor  User?  @relation("RentalEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([rentalId])
+  @@map("rental_events")
 }
 
 model RentPriceProposal {
@@ -413,4 +468,25 @@ model Watchlist {
 
   @@unique([userId, listingId])
   @@map("watchlists")
+}
+
+// Durable outbox for notification delivery. Controllers enqueue jobs here
+// (fast DB write) instead of blocking the HTTP response on SMTP/FCM calls.
+// A background worker (src/services/notificationWorker.js) picks up PENDING
+// jobs and retries failures with exponential backoff until they succeed.
+model NotificationJob {
+  id            String   @id @default(uuid()) @db.Uuid
+  channel       String   @db.VarChar(20) // 'email' | 'fcm'
+  userId        String?  @map("user_id") @db.Uuid
+  recipient     String   @db.VarChar(512) // email address or FCM token
+  payload       Json     // channel-specific payload (subject/html or title/body/data)
+  status        String   @default("PENDING") @db.VarChar(20) // PENDING | PROCESSING | SENT | FAILED
+  attempts      Int      @default(0)
+  lastError     String?  @map("last_error") @db.Text
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, nextAttemptAt])
+  @@map("notification_jobs")
 }

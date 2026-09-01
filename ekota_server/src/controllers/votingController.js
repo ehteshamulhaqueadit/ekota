@@ -239,17 +239,17 @@ async function castVote(req, res) {
             },
             include: { user: true }
           });
-          const { sendWatchlistAlert } = require('../services/notificationService');
-          for (const watch of watchers) {
-            await sendWatchlistAlert(
-              watch.user,
-              listing,
-              'PRICE_CHANGE',
-              `The rent price for "${listing.assetName}" has been updated to ${proposal.proposedPrice}.`
-            );
-          }
+          const { dispatchWatchlistAlerts } = require('../services/notificationService');
+          // Fast DB enqueue only — delivery happens in the background worker.
+          await dispatchWatchlistAlerts(
+            prisma,
+            watchers,
+            listing,
+            'PRICE_CHANGE',
+            `The rent price for "{assetName}" has been updated to ${proposal.proposedPrice}.`
+          );
         } catch (err) {
-          console.error('Failed to send watchlist notifications:', err);
+          console.error('Failed to enqueue watchlist notifications:', err);
         }
       }
     }

@@ -7,9 +7,10 @@ import type { AuthSession } from './types/auth';
 
 import { WithdrawalManagement } from './components/WithdrawalManagement';
 import { PaymentAuditLog } from './components/PaymentAuditLog';
+import { RentalGatePass } from './components/RentalGatePass';
 
 function Dashboard({ onLogout }: { onLogout: () => void }) {
-  const [currentTab, setCurrentTab] = useState<'overview' | 'withdrawals' | 'payments'>('overview');
+  const [currentTab, setCurrentTab] = useState<'overview' | 'withdrawals' | 'payments' | 'gatepass'>('overview');
 
   return (
     <div className="admin-layout">
@@ -42,6 +43,14 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           >
             Payment Audit Log
           </button>
+          <button
+            type="button"
+            className={`nav-item ${currentTab === 'gatepass' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('gatepass')}
+            style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            Warehouse Gate
+          </button>
         </nav>
       </aside>
 
@@ -51,6 +60,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
             {currentTab === 'overview' && 'Dashboard Overview'}
             {currentTab === 'withdrawals' && 'Withdrawal Request Management'}
             {currentTab === 'payments' && 'Payment Audit Log'}
+            {currentTab === 'gatepass' && 'Warehouse Gate — Rental Verification'}
           </h1>
           <div className="topbar-actions">
             <button type="button" className="secondary">Settings</button>
@@ -60,6 +70,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
         {currentTab === 'withdrawals' && <WithdrawalManagement />}
         {currentTab === 'payments' && <PaymentAuditLog />}
+        {currentTab === 'gatepass' && <RentalGatePass />}
 
         {currentTab === 'overview' && (
           <div className="dashboard-scroll">
